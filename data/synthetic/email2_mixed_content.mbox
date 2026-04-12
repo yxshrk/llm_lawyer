@@ -1,0 +1,64 @@
+From legal@ellingson.com Sat Oct 20 09:18:27 1995
+From: Ellingson Legal <legal@ellingson.com>
+To: Hal Benson <hbenson@ellingson.com>
+Date: Sat, 20 Oct 1995 09:18:27 -0500
+Subject: Da Vinci Incident -- Summary and Recommended Actions
+Message-ID: <EL1020.091827@ellingson.com>
+
+Hal,
+
+This memo summarises what we know and what we recommend. Please read
+carefully before your Monday call with the board.
+
+---
+
+SECTION 1: FACTUAL SUMMARY
+(System access records -- Ellingson IT log, confirmed)
+
+Wallace, Margo accessed the Gibson mainframe at 11:42 PM on October 15
+using credentials provisioned by Eugene Belford on October 12. The
+access session lasted 47 minutes. During this session, three file writes
+were recorded to the financial batch processing directory:
+
+  /gibson/finance/batch/dvinci.exe   written 11:44 PM
+  /gibson/finance/batch/dvinci.cfg   written 11:51 PM
+  /gibson/finance/cron/nightly.sh    modified 11:58 PM (added dvinci exec)
+
+The Da Vinci executable ran for the first time at 2:00 AM on October 16
+as part of the nightly batch. It ran undetected for 18 hours before
+Sarah Chen flagged anomalous transaction patterns on October 16 at
+8:14 PM. Total transactions affected: 4,182. Estimated diversion:
+$1,047.23 (salami logic -- fractional amounts per transaction).
+
+Secret Service seized the Gibson on October 17. Forensic imaging is
+confirmed. FBI has been notified.
+
+---
+
+SECTION 2: LEGAL RECOMMENDATIONS
+(Attorney-client communication -- privileged and confidential)
+
+Hal, the following is legal advice and should not be shared, forwarded,
+or discussed outside of privileged counsel.
+
+Your exposure as CEO is limited but real. The key question is what you
+knew and when. Our recommendation is that you do not make any statements
+to investigators -- Secret Service or FBI -- without counsel present.
+This applies to informal conversations as well.
+
+Specifically: do not discuss Belford's role in provisioning Wallace's
+credentials. That chain of events will come out in discovery, and any
+characterisation you offer now will be used to establish what you knew.
+Let the documents speak for themselves.
+
+We recommend retaining outside criminal counsel immediately -- this
+situation is beyond the scope of our corporate engagement. We can make
+introductions if helpful.
+
+Do not destroy, alter, or quarantine any documents or communications
+related to this matter. Preservation obligations are now in effect.
+
+We will advise further as the situation develops.
+
+-- Ellingson Legal
+

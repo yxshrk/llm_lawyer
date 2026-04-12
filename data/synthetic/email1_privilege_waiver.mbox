@@ -1,0 +1,65 @@
+From ebelford@ellingson.com Fri Oct 19 14:32:11 1995
+From: Eugene Belford <ebelford@ellingson.com>
+To: Richard Sterling <r.sterling@sterlinglaw.com>
+CC: Margo Wallace <mwallace@ellingson.com>
+Date: Fri, 19 Oct 1995 14:32:11 -0500
+Subject: Re: Containment strategy -- Gibson access
+Message-ID: <EB1019.143211@ellingson.com>
+
+Richard,
+
+Following up on our call this morning. I need your honest assessment of
+my exposure here.
+
+The Secret Service has the Gibson. If they pull the access logs from
+October 15-16, my credentials show up. I was the one who approved
+Margo's system access during that window -- on paper it looks like I
+knew exactly what was running on that machine.
+
+What I need to know: if they come to me directly, what do I say? Do I
+invoke anything? Do I get ahead of this with Benson first, or does that
+create more of a paper trail?
+
+Also -- if the Da Vinci trace leads back to the original compile, is
+there any argument that I was acting within my authority as CSO? The
+virus was a financial control mechanism. I can frame it as an internal
+audit tool if we need to.
+
+What's our play here? Margo is looped in so she knows the full picture.
+
+-- Eugene
+
+---
+
+From r.sterling@sterlinglaw.com Fri Oct 19 16:05:44 1995
+From: Richard Sterling <r.sterling@sterlinglaw.com>
+To: Eugene Belford <ebelford@ellingson.com>
+CC: Margo Wallace <mwallace@ellingson.com>
+Date: Fri, 19 Oct 1995 16:05:44 -0500
+Subject: Re: Containment strategy -- Gibson access
+Message-ID: <RS1019.160544@sterlinglaw.com>
+
+Eugene,
+
+Do not contact Benson. Not yet.
+
+Your exposure on the access logs is manageable if we move carefully.
+The credential approval can be framed as routine CSO oversight -- you
+authorised access, not execution. That distinction matters.
+
+On the Da Vinci question: the "internal audit tool" framing is risky.
+If forensics shows the salami logic in the code, that argument collapses
+and we look worse for having made it. I'd advise against.
+
+My recommendation: say nothing to anyone at Ellingson until I've had a
+chance to review the Gibson logs myself. If Secret Service makes direct
+contact, you call me immediately and say nothing beyond confirming your
+identity.
+
+We can get ahead of this. But only if you stop talking to people who
+aren't me.
+
+-- Richard Sterling
+   Sterling & Associates
+   212-555-0147
+
