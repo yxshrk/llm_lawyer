@@ -10,7 +10,7 @@ Hal,
 Here is the access log summary you asked for covering the night of
 October 15-16.
 
-At 11:42 PM on October 15, the Gibson's authentication system recorded
+At 11:38 PM on October 15, the Gibson's authentication system recorded
 a successful login under credentials assigned to Margo Wallace. The
 originating terminal was workstation EMC-W-047, located in the third
 floor operations wing.
@@ -20,8 +20,8 @@ to the financial batch processing directory. The filenames written were
 dvinci.exe, dvinci.cfg, and a modification to nightly.sh. All three
 writes are associated with the Wallace credential session.
 
-At 12:29 AM, the session was closed from the same terminal. Total
-session duration: 47 minutes. No anomalies were flagged by automated
+At 11:59 PM, the session was closed from the same terminal. Total
+session duration: 21 minutes. No anomalies were flagged by automated
 monitoring at the time.
 
 The Gibson executed its nightly batch sequence at 2:00 AM on October 16

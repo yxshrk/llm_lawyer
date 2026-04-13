@@ -1,0 +1,273 @@
+import hashlib
+import uuid
+from datetime import datetime, timezone
+from typing import Annotated
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from pydantic import BaseModel
+from sqlalchemy import select
+
+from llm_lawyer import audit
+from llm_lawyer.db.models import Chunk, Document
+from llm_lawyer.db.session import SessionDep
+from llm_lawyer.documents import docx as docx_mod
+from llm_lawyer.documents import pdf as pdf_mod
+from llm_lawyer.documents import storage
+from llm_lawyer.rag import chunker as chunker_mod
+from llm_lawyer.rag import embeddings as embed_mod
+
+router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+class DocumentOut(BaseModel):
+    id: uuid.UUID
+    case_id: uuid.UUID | None = None
+    email_id: uuid.UUID | None = None
+    title: str
+    author: str | None = None
+    source_type: str
+    production_type: str = "own"
+    storage_path: str
+    mime: str | None
+    page_count: int | None
+    sha256: str | None
+    chunk_count: int
+    signed_url: str | None = None
+    created_at: str | None = None
+    last_opened_at: str | None = None
+
+
+class DocumentListOut(BaseModel):
+    items: list[DocumentOut]
+    limit: int
+    offset: int
+
+
+MIME_TO_TYPE = {
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+}
+
+
+def _to_chunker_blocks(blocks) -> list[chunker_mod.ParsedBlock]:
+    out = []
+    for b in blocks:
+        out.append(
+            chunker_mod.ParsedBlock(
+                page=b.page, text=b.text, bbox=getattr(b, "bbox", None)
+            )
+        )
+    return out
+
+
+@router.post("", response_model=DocumentOut)
+async def upload_document(
+    session: SessionDep,
+    file: Annotated[UploadFile, File(...)],
+    case_id: Annotated[uuid.UUID | None, Form()] = None,
+    production_type: Annotated[str, Form()] = "own",
+) -> DocumentOut:
+    if production_type not in {"own", "opposing"}:
+        production_type = "own"
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "Empty file")
+
+    mime = file.content_type or "application/octet-stream"
+    source_type = MIME_TO_TYPE.get(mime)
+    if source_type is None:
+        # Fall back to extension sniff
+        name = (file.filename or "").lower()
+        if name.endswith(".pdf"):
+            source_type, mime = "pdf", "application/pdf"
+        elif name.endswith(".docx"):
+            source_type, mime = "docx", (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        else:
+            raise HTTPException(415, f"Unsupported content-type: {mime}")
+
+    sha = hashlib.sha256(data).hexdigest()
+    doc_id = uuid.uuid4()
+    filename = file.filename or f"{doc_id}.{source_type}"
+    storage_path = f"{doc_id}/{filename}"
+
+    # 1. Parse
+    if source_type == "pdf":
+        parsed = pdf_mod.parse_pdf(data)
+        page_count = parsed.page_count
+        blocks = parsed.blocks
+        author = parsed.author
+    else:
+        parsed_docx = docx_mod.parse_docx(data)
+        page_count = None
+        blocks = parsed_docx.blocks
+        author = parsed_docx.author
+
+    if not blocks:
+        raise HTTPException(422, "No extractable text in document")
+
+    # 2. Chunk
+    chunks = chunker_mod.chunk_blocks(_to_chunker_blocks(blocks))
+    if not chunks:
+        raise HTTPException(422, "Chunker produced no chunks")
+
+    # 3. Embed (batch) — runs in a thread so we don't block the loop.
+    try:
+        embeddings = await embed_mod.embed_documents([c.text for c in chunks])
+    except Exception as e:
+        raise HTTPException(
+            503, f"Embedding service failed: {type(e).__name__}"
+        ) from e
+
+    # 4. Upload to storage (async wrappers; ensure bucket exists first).
+    await storage.ensure_bucket()
+    try:
+        await storage.upload_bytes(storage_path, data, mime)
+    except Exception as e:
+        raise HTTPException(
+            503, f"Storage upload failed: {type(e).__name__}"
+        ) from e
+
+    # 5. Persist. If commit fails, roll back the storage object so we never
+    # leave an orphaned blob with no DB row.
+    doc = Document(
+        id=doc_id,
+        case_id=case_id,
+        title=filename,
+        author=author,
+        source_type=source_type,
+        production_type=production_type,
+        storage_path=storage_path,
+        mime=mime,
+        page_count=page_count,
+        sha256=sha,
+    )
+    session.add(doc)
+    for c, emb in zip(chunks, embeddings):
+        session.add(
+            Chunk(
+                document_id=doc_id,
+                page=c.page,
+                ordinal=c.ordinal,
+                text=c.text,
+                bbox=c.bbox,
+                embedding=emb,
+                token_count=c.token_count,
+            )
+        )
+    try:
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        await storage.delete_object(storage_path)
+        raise HTTPException(
+            503, f"Database commit failed; storage rolled back: {type(e).__name__}"
+        ) from e
+
+    # Audit log in a separate commit — the document is now visible to the FK.
+    try:
+        await audit.log_event(
+            session,
+            action="document_uploaded",
+            case_id=case_id,
+            document_id=doc_id,
+            summary=f"{filename} · {len(chunks)} chunks · {production_type}",
+            metadata={"source_type": source_type, "sha256": sha, "production_type": production_type},
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        # audit is best-effort; never block an otherwise successful upload.
+
+    return DocumentOut(
+        id=doc.id,
+        case_id=doc.case_id,
+        email_id=doc.email_id,
+        title=doc.title,
+        author=doc.author,
+        source_type=doc.source_type,
+        production_type=doc.production_type,
+        storage_path=doc.storage_path,
+        mime=doc.mime,
+        page_count=doc.page_count,
+        sha256=doc.sha256,
+        chunk_count=len(chunks),
+        signed_url=storage.signed_url(storage_path),
+        created_at=doc.created_at.isoformat() if doc.created_at else None,
+        last_opened_at=doc.last_opened_at.isoformat() if doc.last_opened_at else None,
+    )
+
+
+@router.get("", response_model=DocumentListOut)
+async def list_documents(
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> DocumentListOut:
+    stmt = (
+        select(Document)
+        .order_by(Document.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    docs = (await session.execute(stmt)).scalars().all()
+    items: list[DocumentOut] = []
+    for d in docs:
+        # count chunks
+        cnt = (
+            await session.execute(
+                select(Chunk.id).where(Chunk.document_id == d.id)
+            )
+        ).all()
+        items.append(
+            DocumentOut(
+                id=d.id,
+                case_id=d.case_id,
+                email_id=d.email_id,
+                title=d.title,
+                author=d.author,
+                source_type=d.source_type,
+                production_type=d.production_type,
+                storage_path=d.storage_path,
+                mime=d.mime,
+                page_count=d.page_count,
+                sha256=d.sha256,
+                chunk_count=len(cnt),
+                created_at=d.created_at.isoformat() if d.created_at else None,
+                last_opened_at=d.last_opened_at.isoformat() if d.last_opened_at else None,
+            )
+        )
+    return DocumentListOut(items=items, limit=limit, offset=offset)
+
+
+@router.get("/{document_id}", response_model=DocumentOut)
+async def get_document(session: SessionDep, document_id: uuid.UUID) -> DocumentOut:
+    doc = await session.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(404, "Not found")
+    cnt = (
+        await session.execute(
+            select(Chunk.id).where(Chunk.document_id == doc.id)
+        )
+    ).all()
+    # Update last_opened timestamp on read
+    doc.last_opened_at = datetime.now(timezone.utc)
+    await session.commit()
+    return DocumentOut(
+        id=doc.id,
+        case_id=doc.case_id,
+        email_id=doc.email_id,
+        title=doc.title,
+        author=doc.author,
+        source_type=doc.source_type,
+        production_type=doc.production_type,
+        storage_path=doc.storage_path,
+        mime=doc.mime,
+        page_count=doc.page_count,
+        sha256=doc.sha256,
+        chunk_count=len(cnt),
+        signed_url=storage.signed_url(doc.storage_path),
+        created_at=doc.created_at.isoformat() if doc.created_at else None,
+        last_opened_at=doc.last_opened_at.isoformat() if doc.last_opened_at else None,
+    )
