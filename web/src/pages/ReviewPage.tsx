@@ -27,6 +27,7 @@ export default function ReviewPage() {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [redactions, setRedactions] = useState<Redaction[]>([]);
   const [tab, setTab] = useState<RightTab>("redactions");
+  const [opposingRefreshKey, setOpposingRefreshKey] = useState(0);
   const [runningReds, setRunningReds] = useState(false);
   const [progress, setProgress] = useState<{
     batch: number;
@@ -207,7 +208,18 @@ export default function ReviewPage() {
               {runningReds ? "Analyzing…" : "🔍 Run Redaction Analysis"}
             </button>
           )}
-          {isOpposing && <RunOpposingButton docId={docId!} pushEvent={pushEvent} setAnyRunning={setAnyRunning} onDone={refresh} setTab={setTab} />}
+          {isOpposing && (
+            <RunOpposingButton
+              docId={docId!}
+              pushEvent={pushEvent}
+              setAnyRunning={setAnyRunning}
+              onDone={() => {
+                refresh();
+                setOpposingRefreshKey((k) => k + 1);
+              }}
+              setTab={setTab}
+            />
+          )}
         </div>
       </div>
 
@@ -315,7 +327,7 @@ export default function ReviewPage() {
             {tab === "chat" && <ChatPanel docId={docId!} />}
             {tab === "memo" && <MemoPanel docId={docId!} pushEvent={pushEvent} setAnyRunning={setAnyRunning} />}
             {tab === "sw" && <SWPanel docId={docId!} />}
-            {tab === "opposing" && <OpposingPanel docId={docId!} />}
+            {tab === "opposing" && <OpposingPanel docId={docId!} refreshKey={opposingRefreshKey} />}
           </div>
         </div>
       </div>
@@ -719,14 +731,21 @@ function RunOpposingButton({
   );
 }
 
-function OpposingPanel({ docId }: { docId: string }) {
+function OpposingPanel({
+  docId,
+  refreshKey = 0,
+}: {
+  docId: string;
+  refreshKey?: number;
+}) {
   const [data, setData] = useState<{ challenges: OpposingChallenge[]; gaps: OpposingGap[] } | null>(null);
   useEffect(() => {
     (async () => {
       const res = await api.getOpposingReview(docId);
       if (res) setData({ challenges: res.challenges, gaps: res.gaps });
+      else setData(null);
     })();
-  }, [docId]);
+  }, [docId, refreshKey]);
 
   return (
     <div className="p-3 flex flex-col h-full overflow-y-auto">

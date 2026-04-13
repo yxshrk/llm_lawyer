@@ -270,8 +270,15 @@ async def stream_opposing_review(
                             yield json.dumps({"type": "gap", "gap": norm}) + "\n"
                 final_model = result.model
             except Exception as e:
-                logger.warning("gap finder failed: %s", e)
-                yield json.dumps({"type": "error", "message": f"gap finder: {e}"}) + "\n"
+                # Empty content or any other LLM failure → no gaps identified
+                # is a legitimate outcome (e.g. short opposing doc with no
+                # visible redactions). Don't surface this as a hard error.
+                logger.warning("gap finder returned no gaps (%s)", e)
+                yield json.dumps({
+                    "type": "stage_note",
+                    "stage": "gap_finder",
+                    "note": "No argument gaps identified for this document.",
+                }) + "\n"
                 final_model = None
 
             # Persist the analysis

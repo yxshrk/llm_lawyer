@@ -162,6 +162,9 @@ async def stream_relevancy(case_id: uuid.UUID):
 
                 fallback_reason = f"Semantic similarity {score:.2f} vs. case context."
                 reasoning = fallback_reason
+                # The displayed score is the LLM's confidence in the label
+                # (meaningful to a lawyer). Cosine stays as the seed/fallback.
+                display_score = score
                 user_content = (
                     f"Document title: {d.title}\n"
                     f"Retrieval score (cosine): {score:.3f}\n"
@@ -186,11 +189,14 @@ async def stream_relevancy(case_id: uuid.UUID):
                         r_text = str(data.get("reasoning", "")).strip()
                         if r_text:
                             reasoning = r_text[:2000]
+                        conf = data.get("confidence")
+                        if isinstance(conf, (int, float)):
+                            display_score = max(0.0, min(1.0, float(conf)))
                 except Exception as e:
                     logger.warning("LLM relevancy reasoning failed: %s", e)
 
                 d.relevancy_label = label
-                d.relevancy_score = score
+                d.relevancy_score = display_score
                 d.relevancy_reasoning = reasoning
                 d.relevancy_classified_at = datetime.now(timezone.utc)
 
@@ -210,7 +216,8 @@ async def stream_relevancy(case_id: uuid.UUID):
                     "document_id": str(d.id),
                     "title": d.title,
                     "label": label,
-                    "score": score,
+                    "score": display_score,
+                    "cosine": score,
                     "reasoning": reasoning,
                 }) + "\n"
 

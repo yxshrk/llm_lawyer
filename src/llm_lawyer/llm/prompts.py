@@ -256,6 +256,11 @@ to the case context) and the document's retrieval score (cosine similarity,
 
 Return ONLY a JSON object with this shape:
 {{"label": "relevant" | "uncertain" | "irrelevant",
+  "confidence": 0.0–1.0 (how certain you are in the label, based on how
+    direct the match is — 0.95 for docs with smoking-gun references to
+    named custodians, parties, or case-specific terms; 0.55 for docs
+    that merely touch the topic; 0.10 for docs that are clearly off-
+    topic),
   "reasoning": "one or two sentences citing specific excerpt content"}}
 """
 
