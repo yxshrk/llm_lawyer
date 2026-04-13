@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from functools import lru_cache
 
 import voyageai
@@ -8,6 +9,11 @@ from openai import OpenAI
 from llm_lawyer.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+# Circuit breaker: once Voyage rate-limits, skip it entirely for this long
+# before retrying. Stops the log filling with one warning per embed call.
+_VOYAGE_COOLDOWN_SECONDS = 300
+_voyage_skip_until: float = 0.0
 
 
 @lru_cache
@@ -20,6 +26,17 @@ def _voyage() -> voyageai.Client:
 def _openai() -> OpenAI:
     s = get_settings()
     return OpenAI(api_key=s.openai_api_key)
+
+
+def _voyage_on_cooldown() -> bool:
+    """Used by the reranker module to skip Voyage rerank when it's clearly
+    rate-limited — shares the same circuit breaker window as embeddings."""
+    return time.time() < _voyage_skip_until
+
+
+def _trip_breaker() -> None:
+    global _voyage_skip_until
+    _voyage_skip_until = time.time() + _VOYAGE_COOLDOWN_SECONDS
 
 
 def _embed_voyage(texts: list[str], input_type: str) -> list[list[float]]:
@@ -46,22 +63,27 @@ def _embed_openai(texts: list[str]) -> list[list[float]]:
 
 
 def _embed_sync(texts: list[str], input_type: str) -> list[list[float]]:
-    """Try Voyage first (legal-domain model). Fall back to OpenAI on
-    rate-limit or transport failures so the demo never stalls."""
+    """Try Voyage first (legal-domain model). Fall back to OpenAI on rate
+    limit or transport failure so the demo never stalls. After a Voyage
+    failure we skip it entirely for ``_VOYAGE_COOLDOWN_SECONDS`` — avoids
+    spamming the log with the same warning on every call."""
     if not texts:
         return []
     s = get_settings()
-    if s.voyage_api_key:
+    try_voyage = bool(s.voyage_api_key) and not _voyage_on_cooldown()
+    if try_voyage:
         try:
             return _embed_voyage(texts, input_type)
         except Exception as e:
+            _trip_breaker()
             logger.warning(
-                "Voyage embedding failed (%s: %s); falling back to OpenAI",
-                type(e).__name__, str(e)[:120],
+                "Voyage embed failed (%s); using OpenAI for next %ds",
+                type(e).__name__, _VOYAGE_COOLDOWN_SECONDS,
             )
-    # Fallback
     if not s.openai_api_key:
-        raise RuntimeError("No embedding provider available (Voyage failed and no OPENAI_API_KEY)")
+        raise RuntimeError(
+            "No embedding provider available (Voyage off and no OPENAI_API_KEY)"
+        )
     return _embed_openai(texts)
 
 
