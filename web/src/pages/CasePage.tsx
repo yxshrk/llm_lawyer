@@ -253,6 +253,88 @@ export default function CasePage() {
   );
 }
 
+function DocRow({
+  d,
+  i,
+  caseId,
+}: {
+  d: CaseDocument;
+  i: number;
+  caseId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasReason = !!d.relevancy_reasoning;
+  const del = async () => {
+    if (!confirm(`Delete "${d.title}"? This also deletes its chunks, redactions, and challenges.`)) return;
+    await fetch(`${(import.meta.env.VITE_API_URL ?? "http://localhost:8000")}/documents/${d.id}`, {
+      method: "DELETE",
+    });
+    window.location.reload();
+  };
+  return (
+    <>
+      <tr className="hover:bg-stone-50">
+        <td className="px-4 py-2 text-muted align-top">{i + 1}</td>
+        <td className="px-4 py-2 align-top">
+          <Link
+            to={`/cases/${caseId}/documents/${d.id}`}
+            className="text-ink hover:underline font-medium"
+          >
+            📄 {d.title}
+          </Link>
+          {d.email_id && (
+            <span className="ml-2 text-[10px] text-muted">(email attachment)</span>
+          )}
+        </td>
+        <td className="px-4 py-2 text-muted uppercase align-top">
+          {d.source_type}
+          {d.page_count ? ` · ${d.page_count}p` : ""}
+        </td>
+        <td className="px-4 py-2 text-muted align-top">{d.author || "—"}</td>
+        <td className="px-4 py-2 align-top">
+          <div className="flex items-center gap-2">
+            <RelevancyBadge label={d.relevancy_label} score={d.relevancy_score} />
+            {hasReason && (
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="text-[10px] text-accent hover:underline"
+                title={expanded ? "Hide reasoning" : "Show LLM reasoning"}
+              >
+                {expanded ? "− why" : "+ why"}
+              </button>
+            )}
+          </div>
+        </td>
+        <td className="px-4 py-2 text-muted align-top whitespace-nowrap">
+          {formatDateTime(d.created_at)}
+        </td>
+        <td className="px-2 py-2 align-top">
+          <button
+            onClick={del}
+            className="text-muted hover:text-rose-600 text-sm"
+            title="Delete document"
+          >
+            🗑
+          </button>
+        </td>
+      </tr>
+      {expanded && hasReason && (
+        <tr>
+          <td colSpan={7} className="px-4 pb-3 bg-stone-50">
+            <div className="text-xs border-l-4 border-accent bg-white rounded p-3 text-stone-700">
+              <div className="text-[10px] uppercase tracking-wider text-muted mb-1">
+                LLM reasoning · classified{" "}
+                {d.relevancy_score != null && <>· {d.relevancy_score.toFixed(2)} similarity</>}
+              </div>
+              {d.relevancy_reasoning}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function RelevancyBadge({ label, score }: { label?: string | null; score?: number | null }) {
   if (!label) return <span className="text-[10px] text-muted">unclassified</span>;
   const cls =
@@ -475,37 +557,12 @@ function DocumentsTable({
                 <th className="px-4 py-2">Author</th>
                 <th className="px-4 py-2">Relevancy</th>
                 <th className="px-4 py-2">Uploaded</th>
+                <th className="px-2 py-2 w-8"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {docs.map((d, i) => (
-                <tr key={d.id} className="hover:bg-stone-50">
-                  <td className="px-4 py-2 text-muted">{i + 1}</td>
-                  <td className="px-4 py-2">
-                    <Link
-                      to={`/cases/${caseId}/documents/${d.id}`}
-                      className="text-ink hover:underline font-medium"
-                    >
-                      📄 {d.title}
-                    </Link>
-                    {d.email_id && (
-                      <span className="ml-2 text-[10px] text-muted">
-                        (email attachment)
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-muted uppercase">
-                    {d.source_type}
-                    {d.page_count ? ` · ${d.page_count}p` : ""}
-                  </td>
-                  <td className="px-4 py-2 text-muted">{d.author || "—"}</td>
-                  <td className="px-4 py-2" title={d.relevancy_reasoning ?? undefined}>
-                    <RelevancyBadge label={d.relevancy_label} score={d.relevancy_score} />
-                  </td>
-                  <td className="px-4 py-2 text-muted">
-                    {formatDateTime(d.created_at)}
-                  </td>
-                </tr>
+                <DocRow key={d.id} d={d} i={i} caseId={caseId} />
               ))}
             </tbody>
           </table>
