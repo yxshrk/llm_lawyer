@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from llm_lawyer.config import get_settings
-from llm_lawyer.rag.embeddings import _voyage as _voyage_client
+from llm_lawyer.rag.embeddings import (
+    _voyage as _voyage_client,
+    _voyage_on_cooldown,
+    _trip_breaker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +33,10 @@ def _rerank_sync(query: str, docs: list[str]) -> list[tuple[int, float]]:
     s = get_settings()
     if not docs:
         return []
+    # Share the Voyage circuit breaker with embeddings — when Voyage is
+    # rate-limited, skip rerank entirely and return input order.
+    if _voyage_on_cooldown():
+        return [(i, 0.0) for i in range(len(docs))]
     try:
         res = _voyage_client().rerank(
             query=query,
@@ -36,10 +44,13 @@ def _rerank_sync(query: str, docs: list[str]) -> list[tuple[int, float]]:
             model=s.voyage_rerank_model,
             top_k=len(docs),
         )
-        # Voyage returns .results with .index + .relevance_score
         return [(r.index, float(r.relevance_score)) for r in res.results]
     except Exception as e:
-        logger.warning("rerank failed (%s); falling back to input order", e)
+        _trip_breaker()
+        logger.warning(
+            "rerank failed (%s); skipping for cooldown window",
+            type(e).__name__,
+        )
         return [(i, 0.0) for i in range(len(docs))]
 
 
