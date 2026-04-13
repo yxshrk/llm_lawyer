@@ -15,8 +15,9 @@ Events:
 import json
 import logging
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -53,7 +54,11 @@ def _format_batch(chunks: list[Chunk]) -> str:
 
 
 @router.post("/documents/{document_id}/opposing_review/stream")
-async def stream_opposing_review(document_id: uuid.UUID, batch_size: int = 5):
+async def stream_opposing_review(
+    document_id: uuid.UUID,
+    batch_size: Annotated[int, Query(ge=1, le=20)] = 5,
+    enable_web_search: Annotated[bool, Query()] = True,
+):
     async def gen():
         async with SessionLocal() as session:
             doc = await session.get(Document, document_id)
@@ -90,16 +95,39 @@ async def stream_opposing_review(document_id: uuid.UUID, batch_size: int = 5):
             }) + "\n"
 
             # --- Stage 0: web research ---
+            # Per PRD §9 "No document content shared with third parties" — we
+            # restrict the outbound query to short legal-doctrine terms and the
+            # jurisdiction. NEVER send party names, custodians, case summary,
+            # or any case-specific facts to the external search provider.
             yield json.dumps({"type": "stage", "stage": "web_research"}) + "\n"
-            case_summary = memory_ctx.get("case_summary", "")
-            legal_issues = memory_ctx.get("key_legal_issues", "")
-            parties = memory_ctx.get("parties", "")
-            # Build a case-aware search query.
-            search_parts = [p for p in (case_summary, legal_issues, parties) if p and p != "(none)"]
-            search_query = " | ".join(search_parts)[:300] or doc.title
             web_hits: list[websrch.SearchResult] = []
-            if search_query.strip():
-                web_hits = await websrch.web_search(search_query, max_results=5)
+            if enable_web_search:
+                legal_issues = memory_ctx.get("key_legal_issues", "")
+                jurisdiction = memory_ctx.get("jurisdiction", "")
+                # Extract short doctrine-like tokens from legal_issues only;
+                # truncate aggressively so the query is legal-concept-only.
+                doctrine_tokens: list[str] = []
+                for line in (legal_issues or "").splitlines():
+                    line = line.strip("-*• ").strip()
+                    if not line or line.lower() in {"(none)", "none"}:
+                        continue
+                    # Keep only the first few words per line — legal doctrine,
+                    # not facts.
+                    doctrine_tokens.append(" ".join(line.split()[:10]))
+                    if len(doctrine_tokens) >= 3:
+                        break
+                if jurisdiction and jurisdiction not in {"(none)", ""}:
+                    doctrine_tokens.append(
+                        " ".join(jurisdiction.split()[:6])
+                    )
+                safe_query = " ".join(doctrine_tokens)[:180]
+                if safe_query.strip():
+                    yield json.dumps({
+                        "type": "web_query",
+                        "query": safe_query,
+                        "note": "Doctrine-only query — no party names or facts sent externally.",
+                    }) + "\n"
+                    web_hits = await websrch.web_search(safe_query, max_results=5)
             for hit in web_hits:
                 yield json.dumps({
                     "type": "web_result",
@@ -174,16 +202,45 @@ async def stream_opposing_review(document_id: uuid.UUID, batch_size: int = 5):
                     "model": result.model,
                 }) + "\n"
 
+                # Checkpoint after each batch — if the client disconnects
+                # mid-stream, challenges completed so far survive. (Previous
+                # version wrote everything in one final commit; a closed tab
+                # meant total data loss.)
+                _checkpoint = DocumentAnalysis(
+                    document_id=document_id,
+                    kind="opposing_review_checkpoint",
+                    content={
+                        "challenges": challenges,
+                        "gaps": [],
+                        "batch": batch_idx,
+                        "total_batches": total_batches,
+                    },
+                    model=result.model,
+                )
+                session.add(_checkpoint)
+                await session.commit()
+
             # --- Stage 2: gap finder ---
             yield json.dumps({"type": "stage", "stage": "gap_finder"}) + "\n"
             gap_system = PROMPTS.render(PROMPTS.OPPOSING_GAP_FINDER_SYSTEM, memory_ctx)
             gaps: list[dict] = []
+            # Cap chunks fed to gap-finder — 200-chunk productions overflow the
+            # context window. Sample first N + last N by ordinal so we cover
+            # both ends of the production, plus truncate each chunk text.
+            MAX_GAP_CHUNKS = 40
+            if len(chunks) > MAX_GAP_CHUNKS:
+                half = MAX_GAP_CHUNKS // 2
+                gap_chunks = chunks[:half] + chunks[-half:]
+            else:
+                gap_chunks = chunks
             try:
                 gap_user = (
                     f"Document title: {doc.title}\n\n"
-                    f"Excerpts from opposing counsel's production:\n\n"
+                    f"Excerpts from opposing counsel's production"
+                    + (f" (sampled {len(gap_chunks)} of {len(chunks)} chunks):" if len(chunks) > MAX_GAP_CHUNKS else ":")
+                    + "\n\n"
                     + "\n\n".join(
-                        f"[#{c.ordinal}] {c.text[:400]}" for c in chunks
+                        f"[#{c.ordinal}] {c.text[:400]}" for c in gap_chunks
                     )
                 )
                 result = await llm_client.chat_completion(

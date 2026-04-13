@@ -170,7 +170,7 @@ def chunk_blocks(
                 tail_tok += p.tokens
                 if tail_tok >= overlap_tokens:
                     break
-            cur = tail[:-0] if False else list(tail)  # copy
+            cur = list(tail)  # carry tail as next chunk's overlap prefix
             cur_tokens = sum(p.tokens for p in cur)
         else:
             cur = []
