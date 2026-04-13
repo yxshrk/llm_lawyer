@@ -8,11 +8,17 @@ export default function App() {
     <div className="min-h-full flex flex-col">
       <header className="border-b border-line bg-white">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
-          <Link to="/" className="font-semibold tracking-tight text-ink">
-            ⚖︎ LLM Lawyer
+          <Link
+            to="/"
+            className="flex items-center gap-2 font-semibold tracking-tight text-ink"
+          >
+            <span className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-ink text-white text-sm">
+              ♞
+            </span>
+            <span className="text-lg">Gambit</span>
           </Link>
           <div className="text-xs text-muted">
-            Case-scoped review · redaction · chat
+            AI-powered eDiscovery · redaction · Q&amp;A rehearsal · opposing counsel analysis
           </div>
         </div>
       </header>
