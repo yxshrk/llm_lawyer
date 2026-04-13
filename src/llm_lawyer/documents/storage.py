@@ -1,3 +1,15 @@
+"""Supabase Storage helpers.
+
+Every Supabase SDK call is synchronous; we wrap each in
+:func:`asyncio.to_thread` so the FastAPI event loop isn't blocked on
+large uploads. :func:`ensure_bucket` creates the bucket if missing,
+:func:`upload_bytes` writes the blob, :func:`signed_url` generates a
+short-lived URL for the frontend PDF viewer, and :func:`delete_object`
+is the rollback path when a DB commit fails after a successful upload.
+
+Virtual ``email/<uuid>`` paths (email-materialised Documents) bypass
+storage entirely — there is no blob; the frontend inlines the email body.
+"""
 import asyncio
 import logging
 from functools import lru_cache

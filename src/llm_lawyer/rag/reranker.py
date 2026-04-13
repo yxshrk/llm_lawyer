@@ -1,7 +1,13 @@
-"""Voyage cross-encoder reranker (rerank-2.5).
+"""Voyage cross-encoder reranker (``rerank-2.5``).
 
-Re-scores (query, chunk) pairs after the initial bi-encoder retrieval.
-Industry benchmarks report +28–48% NDCG@10 lift over raw dense retrieval.
+Re-scores (query, chunk) pairs after the initial bi-encoder retrieval; used
+downstream of :func:`rag.retriever.retrieve` when ``use_reranker=True``.
+Industry benchmarks report +28–48% NDCG@10 lift over dense retrieval alone.
+
+Shares the Voyage circuit-breaker with :mod:`rag.embeddings`: once a
+rate-limit or transport failure trips
+:data:`rag.embeddings._voyage_skip_until`, rerank calls short-circuit to
+input order (no API call, no log spam) until the cooldown expires.
 """
 from __future__ import annotations
 

@@ -1,3 +1,13 @@
+"""Embedding provider with Voyage → OpenAI fallback + circuit breaker.
+
+Primary is Voyage ``voyage-law-2`` (legal-domain model, 1024-dim). On any
+failure we trip a shared cooldown via :data:`_voyage_skip_until` and route
+subsequent calls to OpenAI ``text-embedding-3-small`` with the explicit
+``dimensions=1024`` parameter so the pgvector column stays consistent.
+
+The cooldown flag is also consulted by :mod:`llm_lawyer.rag.reranker` so a
+single Voyage rate-limit event silences both embed *and* rerank paths.
+"""
 import asyncio
 import logging
 import time

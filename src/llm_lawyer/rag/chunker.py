@@ -2,10 +2,17 @@
 
 Splits text along a hierarchy of separators (paragraph → line → sentence →
 clause → word) rather than a dumb token packer. Semantic boundaries matter
-for legal docs: contract sections, signature blocks, enumerations.
+for legal docs: contract sections, signature blocks, enumerations get
+preserved instead of cut mid-thought.
 
-Still token-aware — each chunk targets ~500 tokens with ~80 tokens of overlap.
-Overlap is computed in sentences (not characters) so we never cut mid-clause.
+Still token-aware — each chunk targets ~500 tokens with ~80 tokens of
+overlap. Overlap is carried between chunks as a **list of trailing
+pieces** (not characters or bytes), so the prefix of chunk N+1 is always
+a coherent sentence boundary, never mid-word.
+
+bbox union per chunk uses the first page's rectangle — if a chunk
+straddles pages, highlighting lands on the first page, which is the
+typical attorney-review UX expectation.
 """
 from __future__ import annotations
 

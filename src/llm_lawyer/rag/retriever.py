@@ -1,3 +1,15 @@
+"""pgvector cosine retriever with optional Voyage rerank.
+
+:func:`retrieve` over-fetches ``top_k * overfetch`` nearest chunks via the
+``<=>`` cosine operator, then (when ``use_reranker=True``) hands the
+shortlist to :func:`rag.reranker.rerank_texts` to re-score each
+(query, chunk) pair with the cross-encoder — industry-reported +28–48%
+NDCG@10 over raw bi-encoder retrieval.
+
+Callers can scope by ``document_id``, ``case_id``, and/or
+``production_type`` — the last is a defense-in-depth guard so chat over
+our-side documents can never leak opposing-counsel chunks.
+"""
 from dataclasses import dataclass
 from uuid import UUID
 

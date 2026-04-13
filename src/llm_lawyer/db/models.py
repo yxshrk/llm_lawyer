@@ -1,3 +1,24 @@
+"""ORM models — the full Gambit schema in one module.
+
+Groups (FK relationships in parentheses):
+- :class:`Case` — a legal matter; owns documents, emails, memory, challenges.
+- :class:`Memory` (→ Case) — Case Context Memo entries per PRD §4.3.
+- :class:`Email` (→ Case) — raw email metadata; may be materialised into
+  a :class:`Document` so it flows through Pipeline 1 / 2.
+- :class:`Document` (→ Case, Email) — the unit of review; has chunks,
+  relevancy fields, and may have an associated email body.
+- :class:`Chunk` (→ Document) — a ~500-token slice plus a pgvector(1024)
+  embedding for RAG and relevancy scoring.
+- :class:`Redaction` (→ Document, Chunk) — AI-suggested redaction span
+  with attorney-review status (PRD §4.5).
+- :class:`RedactionChallenge` (→ Case, Redaction) — Pipeline 2 adversarial
+  Q&A per accepted redaction (PRD §6).
+- :class:`Memo` (→ Document) and :class:`DocumentAnalysis` (→ Document)
+  — on-demand attorney-memo and strengths/weaknesses outputs.
+- :class:`AuditEvent` (→ Case, Document) — court-defensible decision log
+  (PRD §4.8).
+- :class:`Conversation` / :class:`Message` — grounded-chat history.
+"""
 from __future__ import annotations
 
 import uuid

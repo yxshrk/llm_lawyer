@@ -1,3 +1,10 @@
+"""FastAPI application entry point.
+
+Registers every router in :mod:`llm_lawyer.api.routes` and applies CORS so the
+Vite dev server at :5173 can hit the backend. The app is created via
+:func:`create_app` and exported as the module-level ``app`` object that
+uvicorn mounts (``uvicorn llm_lawyer.main:app``).
+"""
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI

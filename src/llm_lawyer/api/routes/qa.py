@@ -158,12 +158,15 @@ async def run_qa(case_id: uuid.UUID):
                 yield json.dumps({"type": "error", "message": "Case not found"}) + "\n"
                 return
 
+            # Only challenge our-side redactions; opposing-counsel docs have
+            # their own pipeline and must never be Q&A'd as ours.
             from llm_lawyer.db.models import Document
             stmt = (
                 select(Redaction)
                 .join(Document, Document.id == Redaction.document_id)
                 .where(
                     Document.case_id == case_id,
+                    Document.production_type == "own",
                     Redaction.status.in_(["accepted", "modified"]),
                 )
                 .order_by(Redaction.confidence.asc().nulls_last())
@@ -188,13 +191,11 @@ async def run_qa(case_id: uuid.UUID):
                 "pairs": sum(1 for _ in peers) // 2,
             }) + "\n"
 
-            # Replace prior run — lawyer decisions are in audit, new run starts clean.
-            from sqlalchemy import delete as _delete
-            await session.execute(
-                _delete(RedactionChallenge).where(RedactionChallenge.case_id == case_id)
-            )
-            await session.commit()
-
+            # Generate into a fresh run_id WITHOUT deleting the prior run.
+            # If the LLM fails for every redaction, the lawyer's previous
+            # work (including lawyer_status decisions) is preserved. The
+            # list endpoint already returns only the latest run_id, and we
+            # prune the old run at the end of a successful generation.
             run_id = uuid.uuid4()
             memory_ctx = await PROMPTS.load_memory_context(session, case_id)
 
@@ -296,6 +297,17 @@ async def run_qa(case_id: uuid.UUID):
                         },
                     },
                 }) + "\n"
+
+            # Prune older runs only after the new run produced at least one
+            # challenge — preserves prior lawyer decisions on LLM outage.
+            if created > 0:
+                from sqlalchemy import delete as _delete
+                await session.execute(
+                    _delete(RedactionChallenge).where(
+                        RedactionChallenge.case_id == case_id,
+                        RedactionChallenge.run_id != run_id,
+                    )
+                )
 
             # Audit log
             await audit.log_event(

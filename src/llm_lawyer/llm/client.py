@@ -1,3 +1,15 @@
+"""Multi-provider LLM client with OpenAI → Gemini → Groq fallback.
+
+All three providers speak the OpenAI Chat Completions protocol (Gemini and
+Groq expose OpenAI-compatible endpoints), so one AsyncOpenAI instance per
+provider — each with its own base_url and api_key — handles everything.
+
+:func:`chat_completion` iterates :attr:`Settings.llm_providers` in order and
+falls back on any SDK-level failure or an empty response. Callers pass
+``task="structured"`` for JSON outputs (low temperature) or ``"narrative"``
+for memos/chat (higher temperature); ``json_mode=True`` asks the compatible
+providers for strict JSON via ``response_format``.
+"""
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
@@ -106,9 +118,16 @@ async def chat_completion(
         kwargs: dict = {
             "model": _provider_model(provider),
             "messages": messages,
-            "max_completion_tokens": s.llm_max_output_tokens,
             "temperature": temperature,
         }
+        # OpenAI's newer chat completions API uses max_completion_tokens;
+        # Gemini's OpenAI-compat endpoint and Groq only accept max_tokens.
+        # Passing the wrong one raises BadRequestError on the fallback
+        # providers — use per-provider kwarg selection.
+        if provider == "openai":
+            kwargs["max_completion_tokens"] = s.llm_max_output_tokens
+        else:
+            kwargs["max_tokens"] = s.llm_max_output_tokens
         if json_mode and provider in ("openai", "gemini"):
             kwargs["response_format"] = {"type": "json_object"}
         try:

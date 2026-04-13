@@ -1,3 +1,9 @@
+"""Typed application settings loaded from ``.env`` via pydantic-settings.
+
+Single source of truth for all env-backed configuration — Supabase connection
+strings, LLM provider keys + models, RAG parameters, CORS origins. Call
+:func:`get_settings` anywhere in the backend; the result is memoised.
+"""
 from functools import lru_cache
 from typing import Literal
 

@@ -200,14 +200,21 @@ async def stream_relevancy(case_id: uuid.UUID):
                 d.relevancy_reasoning = reasoning
                 d.relevancy_classified_at = datetime.now(timezone.utc)
 
+                # Audit logs the LLM confidence the UI shows, plus the raw
+                # cosine as a debug field — keeps the CSV export and the
+                # docs table in agreement on what "score" means.
                 await audit.log_event(
                     session,
                     action="relevancy_classified",
                     case_id=case_id,
                     document_id=d.id,
                     actor="ai",
-                    summary=f"{label} (score={score:.2f})",
-                    metadata={"score": score, "label": label},
+                    summary=f"{label} (conf={display_score:.2f})",
+                    metadata={
+                        "confidence": display_score,
+                        "cosine": score,
+                        "label": label,
+                    },
                 )
                 await session.commit()
 

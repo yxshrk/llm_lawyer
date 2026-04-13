@@ -203,17 +203,24 @@ async def stream_opposing_review(
                 }) + "\n"
 
                 # Checkpoint after each batch — if the client disconnects
-                # mid-stream, challenges completed so far survive. (Previous
-                # version wrote everything in one final commit; a closed tab
-                # meant total data loss.)
+                # mid-stream, challenges completed so far survive. We use the
+                # same kind ("opposing_review") as the final row so the GET
+                # endpoint (which reads the most-recent analysis of that
+                # kind) picks up partial results. The final write overwrites
+                # the checkpoint with a newer row.
                 _checkpoint = DocumentAnalysis(
                     document_id=document_id,
-                    kind="opposing_review_checkpoint",
+                    kind="opposing_review",
                     content={
                         "challenges": challenges,
                         "gaps": [],
-                        "batch": batch_idx,
-                        "total_batches": total_batches,
+                        "web_sources": [
+                            {"title": h.title, "url": h.url, "snippet": h.content[:300]}
+                            for h in web_hits
+                        ],
+                        "_checkpoint": True,
+                        "_batch": batch_idx,
+                        "_total_batches": total_batches,
                     },
                     model=result.model,
                 )
