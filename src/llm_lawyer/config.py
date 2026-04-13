@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="")
     groq_model: str = Field(default="llama-3.3-70b-versatile")
 
-    llm_max_output_tokens: int = 1500
+    llm_max_output_tokens: int = 3000  # avoid mid-citation truncation in Q&A
     # Temperature per task; structured JSON tasks want low, narrative tasks higher.
     llm_temp_structured: float = 0.1
     llm_temp_narrative: float = 0.4
