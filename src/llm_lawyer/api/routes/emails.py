@@ -85,31 +85,39 @@ async def list_emails(
     if production_type in {"own", "opposing"}:
         stmt = stmt.where(Email.production_type == production_type)
     rows = (await session.execute(stmt)).scalars().all()
-    out: list[EmailOut] = []
-    for e in rows:
-        atts = (
-            await session.execute(
-                select(Document).where(Document.email_id == e.id)
-            )
-        ).scalars().all()
-        out.append(
-            EmailOut(
-                id=e.id,
-                case_id=e.case_id,
-                from_addr=e.from_addr,
-                to_addrs=e.to_addrs,
-                subject=e.subject,
-                body=e.body,
-                timestamp=e.timestamp,
-                production_type=e.production_type,
-                created_at=e.created_at,
-                attachments=[
-                    AttachmentOut(id=a.id, title=a.title, source_type=a.source_type)
-                    for a in atts
-                ],
-            )
+    if not rows:
+        return []
+
+    # Single follow-up query groups attachments by email_id — replaces the
+    # N+1 loop that was blowing page-load latency to several seconds.
+    email_ids = [e.id for e in rows]
+    atts_rows = (
+        await session.execute(
+            select(Document).where(Document.email_id.in_(email_ids))
         )
-    return out
+    ).scalars().all()
+    atts_by_email: dict[uuid.UUID, list[Document]] = {}
+    for a in atts_rows:
+        atts_by_email.setdefault(a.email_id, []).append(a)
+
+    return [
+        EmailOut(
+            id=e.id,
+            case_id=e.case_id,
+            from_addr=e.from_addr,
+            to_addrs=e.to_addrs,
+            subject=e.subject,
+            body=e.body,
+            timestamp=e.timestamp,
+            production_type=e.production_type,
+            created_at=e.created_at,
+            attachments=[
+                AttachmentOut(id=a.id, title=a.title, source_type=a.source_type)
+                for a in atts_by_email.get(e.id, [])
+            ],
+        )
+        for e in rows
+    ]
 
 
 @router.delete("/{email_id}")

@@ -62,8 +62,26 @@ async def chat(body: ChatIn, session: SessionDep) -> ChatOut:
     )
 
     top_k = body.top_k or s.retrieval_top_k
+
+    # Pipeline isolation — defence-in-depth. If scoped to a document, pull
+    # that document's production_type (own/opposing) and clamp the retriever
+    # to it so the chat never leaks across sides. Unscoped chat defaults to
+    # "own" so opposing production never surfaces unless explicitly requested.
+    scope_case_id = None
+    scope_production = "own"
+    if body.document_id is not None:
+        scoped_doc = await session.get(Document, body.document_id)
+        if scoped_doc is not None:
+            scope_case_id = scoped_doc.case_id
+            scope_production = scoped_doc.production_type or "own"
+
     retrieved = await retrieve(
-        session, query=body.message, top_k=top_k, document_id=body.document_id
+        session,
+        query=body.message,
+        top_k=top_k,
+        document_id=body.document_id,
+        case_id=scope_case_id,
+        production_type=scope_production,
     )
     if not retrieved:
         # Empty index is not an error — just tell the user plainly.

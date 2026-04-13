@@ -25,6 +25,8 @@ async def retrieve(
     query: str,
     top_k: int = 8,
     document_id: UUID | None = None,
+    case_id: UUID | None = None,
+    production_type: str | None = None,
     use_reranker: bool = True,
     overfetch: int = 4,
 ) -> list[Retrieved]:
@@ -37,11 +39,19 @@ async def retrieve(
     """
     qvec = await embed_query(query)
 
+    from llm_lawyer.db.models import Document  # local import avoids cycle
+
     fetch_k = top_k * overfetch if use_reranker else top_k
     distance = Chunk.embedding.cosine_distance(qvec).label("distance")
     stmt = select(Chunk, distance).order_by(distance).limit(fetch_k)
     if document_id is not None:
         stmt = stmt.where(Chunk.document_id == document_id)
+    if case_id is not None or production_type is not None:
+        stmt = stmt.join(Document, Document.id == Chunk.document_id)
+        if case_id is not None:
+            stmt = stmt.where(Document.case_id == case_id)
+        if production_type in {"own", "opposing"}:
+            stmt = stmt.where(Document.production_type == production_type)
 
     rows = (await session.execute(stmt)).all()
     shortlist: list[Retrieved] = []
