@@ -258,7 +258,7 @@ class RedactionChallenge(Base):
     legal_basis: Mapped[Optional[str]] = mapped_column(Text)
     risk_flag: Mapped[Optional[str]] = mapped_column(Text)
     difficulty: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="standard", server_default="standard"
+        String(32), nullable=False, default="standard", server_default="standard"
     )
     inconsistency_peer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True)

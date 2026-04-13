@@ -234,6 +234,7 @@ export type StreamEvent =
   | { type: "challenge"; challenge: OpposingChallenge }
   | { type: "gap"; gap: OpposingGap }
   | WebResult
+  | { type: "web_query"; query: string; note?: string }
   | { type: "doc"; document_id: string; title: string; label: string; score: number; reasoning: string }
   | { type: "inconsistency_scan"; pairs: number }
   | { type: "challenge"; challenge: RedactionChallenge }

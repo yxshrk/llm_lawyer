@@ -654,6 +654,20 @@ function RunOpposingButton({
             label: `Batch ${ev.batch}/${ev.total_batches}`,
             badge: "OPP",
           });
+        } else if (ev.type === "web_query") {
+          pushEvent({
+            kind: "info",
+            label: `Web query: ${ev.query}`,
+            detail: ev.note,
+            badge: "OPP",
+          });
+        } else if (ev.type === "web_result") {
+          pushEvent({
+            kind: "result",
+            label: `Web: ${ev.title.slice(0, 80)}`,
+            detail: ev.url,
+            badge: "OPP",
+          });
         } else if (ev.type === "challenge") {
           pushEvent({
             kind: "result",
