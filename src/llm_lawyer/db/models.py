@@ -310,6 +310,11 @@ class Chunk(Base):
     ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
     text: Mapped[str] = mapped_column(Text, nullable=False)
     bbox: Mapped[Optional[list]] = mapped_column(JSONB)  # [x0, y0, x1, y1]
+    # Contextual Retrieval (Anthropic, Sept 2024): LLM-generated 1-2 sentence
+    # situating context prepended before embedding. Raw ``text`` stays for
+    # display; ``embedding`` is computed from context + "\n" + text so the
+    # vector is enriched with the doc-level context the chunk was torn from.
+    context: Mapped[Optional[str]] = mapped_column(Text)
     embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(_EMBED_DIM))
     token_count: Mapped[Optional[int]] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(

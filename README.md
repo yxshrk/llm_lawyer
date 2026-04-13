@@ -128,3 +128,142 @@ POST   /chat {message, document_id, conversation_id}  grounded chat
 - **`TimeoutError` on migration**: your network blocks Postgres ports. Use VPN or phone hotspot — Supabase session pooler needs outbound port 5432.
 - **`insufficient_quota`**: add billing at platform.openai.com or paste a Gemini / Groq key.
 - **`socket.gaierror` on DB**: you're probably using the direct `db.*.supabase.co` host (IPv6-only). Switch to the session pooler URI (`aws-*.pooler.supabase.com`) and keep the scheme as `postgresql+asyncpg://`.
+- **Stale uvicorn state** after the two-Claude-sessions workflow: if a new symbol in `prompts.py` errors as `AttributeError` at runtime even though grep confirms it exists, uvicorn cached the half-applied module. `pkill -f uvicorn` and restart; clear `__pycache__` if it persists.
+
+---
+
+# Technical Architecture
+
+This section is the onboarding map: what runs where, how a request flows, and which pieces to touch for a given change.
+
+## System at a glance
+
+```
+┌──────────────────────────┐        ┌──────────────────────────────────────┐
+│  Web (Vite + React + TS) │   ──▶  │  FastAPI (async) — llm_lawyer.main   │
+│  web/src/{pages,         │  HTTP  │  Routers: cases, documents,          │
+│   components, lib/api.ts}│ NDJSON │   redactions, relevancy, qa,         │
+└──────────────────────────┘        │   opposing, analyses, chat,          │
+                                    │   emails, audit_events, health       │
+                                    └───┬──────────────┬───────────────┬───┘
+                                        │              │               │
+                                        ▼              ▼               ▼
+                            ┌───────────────┐ ┌─────────────┐ ┌─────────────┐
+                            │ Supabase      │ │ Voyage (or  │ │ OpenAI /    │
+                            │  Postgres     │ │  OpenAI)    │ │  Gemini /   │
+                            │  + pgvector   │ │  embeddings │ │  Groq LLMs  │
+                            │ Supabase      │ │             │ │ (multi-     │
+                            │  Storage      │ │             │ │  provider   │
+                            │  (PDF/DOCX)   │ │             │ │  fallback)  │
+                            └───────────────┘ └─────────────┘ └─────────────┘
+```
+
+Three product pipelines (per PRD), all running against the same Postgres and sharing the same Case Context Memo:
+
+1. **Own-doc review** — upload → chunk → embed → relevancy classify → redaction suggest → lawyer accept/reject/modify.
+2. **Defense Q&A** — adversarial rehearsal over accepted redactions (iterative; priority-inconsistency + hard-low-confidence surfaced first).
+3. **Offense on opposing production** — redaction challenges + argument-gap finder, scoped strictly to `production_type='opposing'` docs.
+
+## Request flow (representative: redaction run)
+
+```
+User clicks "Run Redaction Analysis" in ReviewPage
+  ↓
+POST /documents/{id}/redactions/stream   (NDJSON)
+  ↓  src/llm_lawyer/api/routes/redactions.py::stream_redactions
+  │    1. Load Document + Chunks (scoped by document_id)
+  │    2. PROMPTS.load_memory_context(case_id) — pulls all Memory rows, maps kind → placeholder
+  │    3. PROMPTS.render(REDACTION_SYSTEM, memory_ctx) — stable system prefix
+  │    4. For each batch of 5 chunks:
+  │         a. llm_client.chat_completion(...)  (OpenAI → Gemini → Groq fallback)
+  │         b. extract_json → verify span exists in chunk text
+  │         c. INSERT redaction row, flush, yield NDJSON event
+  ↓
+Frontend streams cards into the review queue
+  ↓
+PATCH /redactions/{id} {status, modified_span}
+  ↓ audit.log_event("redaction_accepted"|"rejected"|"modified")
+```
+
+Same shape for relevancy, opposing, Q&A — each uses a streaming NDJSON generator with its own system prompt and per-row audit events.
+
+## Layers
+
+| Layer | Path | Responsibility |
+|---|---|---|
+| HTTP routes | `src/llm_lawyer/api/routes/*.py` | Request/response, validation, orchestration, audit logging |
+| Prompts | `src/llm_lawyer/llm/prompts.py` + `prompts/rules.md` | System prompts with named placeholders, `load_memory_context`, `render()` |
+| LLM client | `src/llm_lawyer/llm/client.py` | Multi-provider fallback (OpenAI Chat-Completions protocol for all three) |
+| Embeddings / retrieval | `src/llm_lawyer/rag/{embeddings,retriever,reranker,chunker}.py` | Voyage `voyage-law-2` → pgvector cosine → Voyage reranker |
+| Document ingest | `src/llm_lawyer/documents/{pdf,docx,storage}.py` | Parse, chunk, upload to Supabase Storage |
+| DB | `src/llm_lawyer/db/{models,session,base}.py` + `alembic/versions/` | SQLAlchemy 2 async + Alembic migrations |
+| Audit | `src/llm_lawyer/audit.py` | Single `log_event()` helper called from every mutating route |
+| Frontend | `web/src/pages/*`, `web/src/components/*`, `web/src/lib/api.ts` | Vite + React + TS; `api.ts` is the one network boundary |
+
+## Data model (abridged)
+
+- `cases` — matter root. Every AI feature is scoped by `case_id`.
+- `memories(kind, content)` — the Case Context Memo. `kind ∈ {case_summary, parties, jurisdiction, key_legal_issues, privilege_rules, key_custodians, key_date_range, custom_rules}`. Rendered into every LLM system prompt via `PROMPTS.load_memory_context`.
+- `documents(case_id, production_type, storage_path, relevancy_label, ...)` — `production_type ∈ {own, opposing}` is the hard boundary that keeps Pipelines 1/2 and Pipeline 3 separated.
+- `chunks(document_id, page, ordinal, text, bbox, embedding vector(1024))` — pgvector index.
+- `redactions(document_id, chunk_id, text_span, label, confidence, status, modified_span)` — Pipeline 1 output; `status ∈ {pending, accepted, rejected, modified}`.
+- `redaction_challenges(case_id, redaction_id, run_id, challenge_question, suggested_answer, legal_basis, risk_flag, difficulty, inconsistency_peer_id, lawyer_status)` — Pipeline 2 output; `lawyer_status ∈ {pending, prepared, needs_work, will_revise}`.
+- `document_analyses(document_id, kind, content JSONB)` — kind ∈ {`memo`, `strengths_weaknesses`, `opposing_review`}.
+- `audit_events(case_id, document_id, actor, action, target_type, target_id, summary, metadata)` — append-only.
+- `conversations + messages` — chat history.
+
+## Case Context Memo — how it reaches the LLM
+
+The memo is the single source of truth for what the case is about. Every AI call gets it as a stable system-prompt prefix:
+
+```python
+# in every pipeline route:
+memory_ctx = await PROMPTS.load_memory_context(session, case_id)
+system    = PROMPTS.render(PROMPTS.<PIPELINE>_SYSTEM, memory_ctx)
+messages  = [{"role": "system", "content": system}, ...]
+```
+
+`load_memory_context` groups `Memory` rows by `kind → placeholder`, concatenating multi-row kinds. Missing kinds render as `"(none)"` so templates never `KeyError`. The same prefix across calls is what lets OpenAI's automatic prompt cache hit.
+
+> `prompts/case_context_memo.md` is **reference for humans only** — nothing loads it at runtime. The live memo is the `memories` table.
+
+## Pipeline isolation (own vs opposing)
+
+- `documents.production_type` set at upload, never changed.
+- `relevancy.stream_relevancy` filters `production_type == 'own'` at the DB query (not just retrieval).
+- `opposing.py` rejects any document with `production_type != 'opposing'` at the route entry.
+- `retriever.retrieve()` scopes by `document_id`; callers always pass one for own-doc flows.
+
+This is the guarantee that opposing counsel's production never mixes into the client's own-doc chat, memo, redaction, or Q&A context.
+
+## Multi-LLM fallback
+
+`llm/client.py` walks `LLM_PROVIDERS` (default `openai,gemini,groq`) and retries on `RateLimitError | AuthenticationError | APIConnectionError`. Gemini and Groq are called through their OpenAI-compatible endpoints, so the `chat_completion` call site is identical across all three.
+
+Embeddings have a parallel fallback: Voyage `voyage-law-2` primary → OpenAI `text-embedding-3-large` on rate-limit.
+
+## Audit trail
+
+`audit.log_event(session, action, case_id, ..., actor, metadata)` is called synchronously inside the same transaction as the mutating change. Every PRD §8 event class has a call site. Export is `GET /cases/{id}/audit.csv`. Rows are never updated or deleted by API.
+
+**Known gaps** — memo lifecycle events and some analysis generation are not yet logged; `actor` is a static string pending auth.
+
+## Migrations
+
+Alembic linear history: `0001_init → 0002_cases → 0003_emails → 0004_production_type → 0005_relevancy_audit → 0006_case_cascade → 0007_qa_challenges`.
+
+When two Claude sessions are working in parallel, **only one owns the next revision**. Generate on a branch, merge heads at the end. Never `alembic upgrade` against the shared Supabase instance from two sessions at once.
+
+## Frontend
+
+- `App.tsx` → `CasesPage` → `CasePage` (tabs: Our Pipeline / Opposing / Case Context / Audit / Consolidated) → `ReviewPage` (3-col doc workspace).
+- `lib/api.ts` is the **only** place that calls `fetch`. Every route has a typed wrapper. NDJSON endpoints expose `async function*` generators (e.g. `streamRelevancy`, `streamRedactions`, `streamQa`).
+- `components/ActivityConsole.tsx` surfaces the NDJSON event stream so the user sees progress without opening devtools.
+
+## Known deviations from PRD
+
+- **Auth** not implemented — single-tenant demo; `actor` is a constant string.
+- **OCR** not implemented — scanned PDFs silently produce empty chunks.
+- **Retention** not implemented — documents persist indefinitely; `case_id` FK cascade was tightened in migration `0006` to limit orphaning.
+- **Pipeline 2 re-trigger** currently regenerates all challenges; PRD §6.4 requires re-challenging only revised redactions.
+- See PR-specific review notes for the shortlist of follow-ups.

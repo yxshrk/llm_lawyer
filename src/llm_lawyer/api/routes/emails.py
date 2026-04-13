@@ -10,6 +10,7 @@ from sqlalchemy import select
 from llm_lawyer.db.models import Case, Chunk, Document, Email
 from llm_lawyer.db.session import SessionDep
 from llm_lawyer.rag import chunker as chunker_mod
+from llm_lawyer.rag import contextualizer as ctx_mod
 from llm_lawyer.rag import embeddings as embed_mod
 
 logger = logging.getLogger(__name__)
@@ -166,8 +167,18 @@ async def _materialize_email_as_document(session, email: Email) -> Document | No
     if not chunks:
         return None
 
+    # Contextual Retrieval — generate per-chunk context from the full email
+    # body so short emails ("The package is ready") inherit sender/recipient
+    # /subject/date context at embedding time.
+    contexts = await ctx_mod.generate_contexts(
+        document_title=email.subject or "(no subject)",
+        document_text=text,
+        chunks=[(c.ordinal, c.text) for c in chunks],
+    )
+    embed_inputs = ctx_mod.apply_contexts([c.text for c in chunks], contexts)
+
     try:
-        embeddings = await embed_mod.embed_documents([c.text for c in chunks])
+        embeddings = await embed_mod.embed_documents(embed_inputs)
     except Exception as ex:
         logger.warning("embed failed for email %s: %s", email.id, ex)
         return None
@@ -187,18 +198,33 @@ async def _materialize_email_as_document(session, email: Email) -> Document | No
     )
     session.add(doc)
     await session.flush()
+    doc_chunks_added = 0
     for c, emb in zip(chunks, embeddings):
+        doc_chunks_added += 1
         session.add(
             Chunk(
                 document_id=doc.id,
                 page=c.page,
                 ordinal=c.ordinal,
                 text=c.text,
+                context=contexts.get(c.ordinal),
                 bbox=c.bbox,
                 embedding=emb,
                 token_count=c.token_count,
             )
         )
+    await session.flush()
+    # Populate the BM25 tsvector for this document's new chunks.
+    from sqlalchemy import text as _sql_text
+    await session.execute(
+        _sql_text(
+            "UPDATE chunks SET ts = "
+            "setweight(to_tsvector('english', coalesce(context, '')), 'A') || "
+            "setweight(to_tsvector('english', coalesce(text, '')), 'B') "
+            "WHERE document_id = :did"
+        ),
+        {"did": str(doc.id)},
+    )
     return doc
 
 

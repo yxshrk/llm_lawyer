@@ -14,6 +14,7 @@ from llm_lawyer.documents import docx as docx_mod
 from llm_lawyer.documents import pdf as pdf_mod
 from llm_lawyer.documents import storage
 from llm_lawyer.rag import chunker as chunker_mod
+from llm_lawyer.rag import contextualizer as ctx_mod
 from llm_lawyer.rag import embeddings as embed_mod
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -123,9 +124,23 @@ async def upload_document(
     if not chunks:
         raise HTTPException(422, "Chunker produced no chunks")
 
+    # 2b. Contextual Retrieval — one LLM call per doc generates a 1-2
+    # sentence situating context per chunk. Prepended before embedding so
+    # short chunks (e.g. "The package is ready") inherit the document-level
+    # context (who sent it, when, why it matters). Graceful no-op on LLM
+    # failure — we still embed the raw chunks and fall back to the
+    # pre-contextual behaviour.
+    full_doc_text = "\n\n".join(b.text for b in blocks)
+    contexts = await ctx_mod.generate_contexts(
+        document_title=filename,
+        document_text=full_doc_text,
+        chunks=[(c.ordinal, c.text) for c in chunks],
+    )
+    embed_inputs = ctx_mod.apply_contexts([c.text for c in chunks], contexts)
+
     # 3. Embed (batch) — runs in a thread so we don't block the loop.
     try:
-        embeddings = await embed_mod.embed_documents([c.text for c in chunks])
+        embeddings = await embed_mod.embed_documents(embed_inputs)
     except Exception as e:
         raise HTTPException(
             503, f"Embedding service failed: {type(e).__name__}"
@@ -162,6 +177,7 @@ async def upload_document(
                 page=c.page,
                 ordinal=c.ordinal,
                 text=c.text,
+                context=contexts.get(c.ordinal),
                 bbox=c.bbox,
                 embedding=emb,
                 token_count=c.token_count,
@@ -175,6 +191,20 @@ async def upload_document(
         raise HTTPException(
             503, f"Database commit failed; storage rolled back: {type(e).__name__}"
         ) from e
+
+    # Populate the BM25 tsvector column for new chunks (Postgres computes it).
+    # Done after commit so the rows exist.
+    from sqlalchemy import text as _sql_text
+    await session.execute(
+        _sql_text(
+            "UPDATE chunks SET ts = "
+            "setweight(to_tsvector('english', coalesce(context, '')), 'A') || "
+            "setweight(to_tsvector('english', coalesce(text, '')), 'B') "
+            "WHERE document_id = :did"
+        ),
+        {"did": str(doc_id)},
+    )
+    await session.commit()
 
     # Audit log in a separate commit — the document is now visible to the FK.
     try:
