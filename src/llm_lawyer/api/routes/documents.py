@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from llm_lawyer import audit
-from llm_lawyer.db.models import Chunk, Document
+from llm_lawyer.db.models import Chunk, Document, Email
 from llm_lawyer.db.session import SessionDep
 from llm_lawyer.documents import docx as docx_mod
 from llm_lawyer.documents import pdf as pdf_mod
@@ -17,6 +17,16 @@ from llm_lawyer.rag import chunker as chunker_mod
 from llm_lawyer.rag import embeddings as embed_mod
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+class EmailPreview(BaseModel):
+    """Email body inlined on the Document response when source_type='email'.
+    Frontend renders this instead of a PDF viewer for virtual email docs."""
+    from_addr: str | None = None
+    to_addrs: str | None = None
+    subject: str | None = None
+    body: str | None = None
+    timestamp: str | None = None
 
 
 class DocumentOut(BaseModel):
@@ -33,6 +43,7 @@ class DocumentOut(BaseModel):
     sha256: str | None
     chunk_count: int
     signed_url: str | None = None
+    email: EmailPreview | None = None
     created_at: str | None = None
     last_opened_at: str | None = None
 
@@ -284,6 +295,26 @@ async def get_document(session: SessionDep, document_id: uuid.UUID) -> DocumentO
     # Update last_opened timestamp on read
     doc.last_opened_at = datetime.now(timezone.utc)
     await session.commit()
+
+    # Email-sourced docs have a virtual storage_path with no blob. Skip
+    # signed_url generation (it would fail) and attach the email body so
+    # the frontend can render text directly.
+    is_email = doc.source_type == "email" or (
+        doc.storage_path or ""
+    ).startswith("email/")
+    signed = None if is_email else storage.signed_url(doc.storage_path)
+    email_preview = None
+    if is_email and doc.email_id:
+        e = await session.get(Email, doc.email_id)
+        if e is not None:
+            email_preview = EmailPreview(
+                from_addr=e.from_addr,
+                to_addrs=e.to_addrs,
+                subject=e.subject,
+                body=e.body,
+                timestamp=e.timestamp.isoformat() if e.timestamp else None,
+            )
+
     return DocumentOut(
         id=doc.id,
         case_id=doc.case_id,
@@ -297,7 +328,8 @@ async def get_document(session: SessionDep, document_id: uuid.UUID) -> DocumentO
         page_count=doc.page_count,
         sha256=doc.sha256,
         chunk_count=len(cnt),
-        signed_url=storage.signed_url(doc.storage_path),
+        signed_url=signed,
+        email=email_preview,
         created_at=doc.created_at.isoformat() if doc.created_at else None,
         last_opened_at=doc.last_opened_at.isoformat() if doc.last_opened_at else None,
     )

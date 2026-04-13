@@ -37,10 +37,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["relevancy"])
 
 
-# Which memory kinds feed the "case query" vector for relevancy. Using
-# case_summary + key_legal_issues + custom_rules gives the best signal
-# (ignore jurisdiction/dates since those aren't textually close to chunks).
-_QUERY_KINDS = ("case_summary", "key_legal_issues", "custom_rules")
+# Which memory kinds feed the "case query" vector for relevancy.
+#
+# Lesson learned: concatenating long memory (case_summary + rules + issues)
+# produced a giant query vector that cosine-collapsed against short chunks
+# → every doc scored 0.00–0.05. Useless for ranking.
+#
+# Now we keep the embedding query SHORT and focused on the single most
+# discriminating memory field (key_legal_issues). The full memory still
+# goes to the LLM system prompt; only the vector stays tight.
+_QUERY_KINDS = ("key_legal_issues",)
+_QUERY_MAX_CHARS = 1200
 
 
 async def _build_case_query(session: AsyncSession, case_id: uuid.UUID) -> str:
@@ -53,7 +60,12 @@ async def _build_case_query(session: AsyncSession, case_id: uuid.UUID) -> str:
     for m in rows:
         if m.kind in _QUERY_KINDS and m.content.strip():
             parts.append(m.content.strip())
-    return "\n\n".join(parts) or "General case review."
+    query = "\n\n".join(parts) or "General case review."
+    # Keep the embedding query short — long queries dilute cosine similarity
+    # against individual email/chunk vectors. Full memory goes to the LLM.
+    if len(query) > _QUERY_MAX_CHARS:
+        query = query[:_QUERY_MAX_CHARS]
+    return query
 
 
 def _aggregate_score(distances: list[float], top_k: int = 5) -> float:

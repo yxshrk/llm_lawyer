@@ -13,6 +13,7 @@ import {
 import { cn } from "../lib/utils";
 import { Loader } from "../components/Loader";
 import { PdfViewer } from "../components/PdfViewer";
+import { EmailViewer } from "../components/EmailViewer";
 import {
   ActivityConsole,
   useActivityLog,
@@ -211,13 +212,19 @@ export default function ReviewPage() {
       </div>
 
       <div className="flex-1 grid grid-cols-[1fr_380px_380px] min-h-0">
-        {/* PDF preview */}
+        {/* Document preview — PDF viewer for uploads, inline email layout
+             for email-sourced docs (no blob exists for those). */}
         <div className="border-r border-line min-h-0">
-          {doc.signed_url ? (
+          {doc.source_type === "email" && doc.email ? (
+            <EmailViewer email={doc.email} title={doc.title} />
+          ) : doc.signed_url ? (
             <PdfViewer url={doc.signed_url} />
           ) : (
-            <div className="flex items-center justify-center h-full text-muted">
-              No preview URL.
+            <div className="flex items-center justify-center h-full text-muted flex-col gap-2">
+              <div>No preview available</div>
+              <div className="text-xs">
+                source_type={doc.source_type} · no stored blob
+              </div>
             </div>
           )}
         </div>
