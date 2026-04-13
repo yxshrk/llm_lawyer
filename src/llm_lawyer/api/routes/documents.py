@@ -241,6 +241,36 @@ async def list_documents(
     return DocumentListOut(items=items, limit=limit, offset=offset)
 
 
+@router.delete("/{document_id}")
+async def delete_document(session: SessionDep, document_id: uuid.UUID) -> dict:
+    doc = await session.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(404, "Not found")
+    storage_path = doc.storage_path
+    case_id = doc.case_id
+    title = doc.title
+    await session.delete(doc)  # cascades to chunks, memos, redactions
+    await session.commit()
+    # Best-effort blob cleanup — skip virtual email/ paths.
+    if storage_path and not storage_path.startswith("email/"):
+        try:
+            await storage.delete_object(storage_path)
+        except Exception:
+            pass
+    try:
+        await audit.log_event(
+            session,
+            action="document_deleted",
+            case_id=case_id,
+            actor="lawyer",
+            summary=f"deleted: {title}",
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+    return {"ok": True, "id": str(document_id)}
+
+
 @router.get("/{document_id}", response_model=DocumentOut)
 async def get_document(session: SessionDep, document_id: uuid.UUID) -> DocumentOut:
     doc = await session.get(Document, document_id)
