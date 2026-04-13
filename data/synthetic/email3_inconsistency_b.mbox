@@ -9,9 +9,10 @@ Richard,
 
 Forwarding this for your context before tomorrow's debrief. IT pulled
 this from Belford's sent folder -- Secret Service flagged it but I don't
-think Legal has reviewed it yet.
+think Legal has reviewed it for redaction yet. Reproducing the key
+passage verbatim so there's no ambiguity about what it says:
 
------ Forwarded message -----
+----- Forwarded message (exact quote from ebelford sent folder) -----
 
 The Da Vinci sequence was designed to execute a salami slicing attack
 across all Gibson financial accounts, diverting $0.25 per transaction to
@@ -20,8 +21,8 @@ an offshore routing number. Total projected yield: $25.1M over 18 months.
 ----- End forwarded message -----
 
 This matches exactly what we found in the batch logs. Belford knew the
-full scope. I'm documenting this now in case anyone asks how we
-characterised it internally.
+full scope before it ran. I'm documenting this now in case anyone asks
+how we characterised it internally before legal review.
 
 -- Sarah
 
