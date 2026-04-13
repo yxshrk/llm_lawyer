@@ -230,6 +230,49 @@ class DocumentAnalysis(Base):
     )
 
 
+class RedactionChallenge(Base):
+    """Pipeline 2 — Q&A Challenge Set per PRD §6. One row per adversarial
+    question generated for an approved redaction."""
+    __tablename__ = "redaction_challenges"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    redaction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("redactions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True
+    )
+    challenge_question: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_answer: Mapped[Optional[str]] = mapped_column(Text)
+    legal_basis: Mapped[Optional[str]] = mapped_column(Text)
+    risk_flag: Mapped[Optional[str]] = mapped_column(Text)
+    difficulty: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="standard", server_default="standard"
+    )
+    inconsistency_peer_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True)
+    )
+    lawyer_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", server_default="pending"
+    )
+    lawyer_notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
 class Chunk(Base):
     __tablename__ = "chunks"
 

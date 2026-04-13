@@ -192,6 +192,12 @@ async def list_case_documents(
             "production_type": d.production_type,
             "page_count": d.page_count,
             "email_id": str(d.email_id) if d.email_id else None,
+            "relevancy_label": d.relevancy_label,
+            "relevancy_score": d.relevancy_score,
+            "relevancy_reasoning": d.relevancy_reasoning,
+            "relevancy_classified_at": (
+                d.relevancy_classified_at.isoformat() if d.relevancy_classified_at else None
+            ),
             "created_at": d.created_at.isoformat() if d.created_at else None,
             "last_opened_at": d.last_opened_at.isoformat() if d.last_opened_at else None,
         }

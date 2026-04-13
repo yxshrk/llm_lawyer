@@ -26,6 +26,7 @@ Legacy placeholders still accepted (alias to new ones for older system prompts):
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 from string import Formatter
 from uuid import UUID
 
@@ -33,6 +34,23 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from llm_lawyer.db.models import Memory
+
+
+def _load_external_prompt(filename: str) -> str:
+    """Load a curated system-prompt body from the top-level prompts/ folder.
+    Falls back to empty string if the file isn't present so deployments without
+    the file keep working."""
+    for root in (Path.cwd(), Path(__file__).resolve().parents[3]):
+        p = root / "prompts" / filename
+        if p.exists():
+            return p.read_text(encoding="utf-8").strip()
+    return ""
+
+
+# Curated rules from prompts/rules.md — authoritative redaction guidance from
+# the team. We prepend case-memory placeholders so each call still carries
+# matter-specific context.
+_RULES_BODY = _load_external_prompt("rules.md")
 
 
 # =============================================================================
@@ -78,7 +96,15 @@ Rules:
 """
 
 
-REDACTION_SYSTEM = """You are a senior eDiscovery reviewing attorney working on
+def _escape_braces(s: str) -> str:
+    """Escape literal { and } so format_map doesn't treat them as placeholders
+    (rules.md contains JSON examples that would otherwise break rendering)."""
+    return s.replace("{", "{{").replace("}", "}}")
+
+
+_REDACTION_PREAMBLE = (_escape_braces(_RULES_BODY) + "\n\n---\n\n") if _RULES_BODY else ""
+
+REDACTION_SYSTEM = _REDACTION_PREAMBLE + """You are a senior eDiscovery reviewing attorney working on
 the case below. Identify spans in the provided document excerpts that should be
 redacted before production.
 
@@ -141,6 +167,59 @@ Expected output:
       "label": "PII", "confidence": 0.99,
       "reasoning": "Social Security Number is personally identifiable information under standard privacy categories."}}
   ]
+"""
+
+
+QA_CHALLENGE_SYSTEM = """You are an aggressive federal judge AND opposing
+counsel at the same time — not a neutral reviewer. Our client's attorney
+produced a redacted document and you are stress-testing the redaction before
+production. Your job is to make the attorney sweat.
+
+### Case summary
+{case_summary}
+
+### Parties
+{parties}
+
+### Jurisdiction (controlling law)
+{jurisdiction}
+
+### Key legal issues
+{key_legal_issues}
+
+### Privilege rules / standing orders
+{privilege_rules}
+
+### Key custodians (critical for waiver arguments)
+{key_custodians}
+
+### Key date range
+{key_date_range}
+
+### Custom rules
+{custom_rules}
+
+### Difficulty modifier
+{difficulty_note}
+
+Produce ONE adversarial challenge for the redaction below. Return ONLY a JSON
+object with keys:
+  - "challenge_question": the single most damaging question a judge or
+    opposing counsel would ask about THIS specific redaction. Cite the
+    actual text that surrounds it. Never softball.
+  - "suggested_answer": 2-3 sentence plain-English answer the attorney can
+    use at a hearing. Specific, references the case context above.
+  - "legal_basis": the specific privilege doctrine, case citation, FRCP rule,
+    or standing order that supports THIS redaction. Name it.
+  - "risk_flag": ONLY if the redaction is vulnerable. One sentence naming the
+    concrete attack vector. Empty string if clearly defensible.
+
+Rules:
+- For PRIV redactions, test waiver (third parties CC'd, non-legal subject,
+  disclosure to consultants).
+- For TS redactions, test whether the info is actually secret (disclosed
+  elsewhere? publicly known?).
+- Output plain markdown. Do NOT escape asterisks or use backslash-escape sequences.
 """
 
 

@@ -138,40 +138,44 @@ async def stream_relevancy(case_id: uuid.UUID):
                 except Exception:
                     top_for_llm = top_texts[:5]
 
-                # Threshold bands.
+                # Threshold band is the starting position; LLM always writes the
+                # "why" (PRD §4.4 requires plain-English reasoning for every
+                # classification, not just UNCERTAIN).
                 if score >= s.relevancy_high_threshold:
                     label = "relevant"
-                    reasoning = f"High semantic alignment (mean top-k sim {score:.2f})."
                 elif score < s.relevancy_low_threshold:
                     label = "irrelevant"
-                    reasoning = f"Low semantic alignment (mean top-k sim {score:.2f})."
                 else:
-                    # UNCERTAIN — LLM pass for reasoning.
                     label = "uncertain"
-                    reasoning = f"Borderline similarity {score:.2f}."
-                    user_content = (
-                        f"Document title: {d.title}\n"
-                        f"Retrieval score (cosine): {score:.3f}\n"
-                        f"Top passages:\n\n"
-                        + "\n\n".join(f"— {t[:400]}" for t in top_for_llm)
+
+                fallback_reason = f"Semantic similarity {score:.2f} vs. case context."
+                reasoning = fallback_reason
+                user_content = (
+                    f"Document title: {d.title}\n"
+                    f"Retrieval score (cosine): {score:.3f}\n"
+                    f"Preliminary band from cosine threshold: {label.upper()}\n\n"
+                    f"Top passages from this document:\n\n"
+                    + "\n\n".join(f"— {t[:400]}" for t in top_for_llm)
+                )
+                try:
+                    llm_result = await llm_client.chat_completion(
+                        [
+                            {"role": "system", "content": relevancy_system},
+                            {"role": "user", "content": user_content},
+                        ],
+                        task="structured",
+                        json_mode=True,
                     )
-                    try:
-                        llm_result = await llm_client.chat_completion(
-                            [
-                                {"role": "system", "content": relevancy_system},
-                                {"role": "user", "content": user_content},
-                            ],
-                            task="structured",
-                            json_mode=True,
-                        )
-                        data = extract_json(llm_result.text) or {}
-                        if isinstance(data, dict):
-                            lbl = str(data.get("label", "uncertain")).lower().strip()
-                            if lbl in {"relevant", "uncertain", "irrelevant"}:
-                                label = lbl
-                            reasoning = str(data.get("reasoning", reasoning))[:2000]
-                    except Exception as e:
-                        logger.warning("LLM relevancy reasoning failed: %s", e)
+                    data = extract_json(llm_result.text) or {}
+                    if isinstance(data, dict):
+                        lbl = str(data.get("label", label)).lower().strip()
+                        if lbl in {"relevant", "uncertain", "irrelevant"}:
+                            label = lbl
+                        r_text = str(data.get("reasoning", "")).strip()
+                        if r_text:
+                            reasoning = r_text[:2000]
+                except Exception as e:
+                    logger.warning("LLM relevancy reasoning failed: %s", e)
 
                 d.relevancy_label = label
                 d.relevancy_score = score

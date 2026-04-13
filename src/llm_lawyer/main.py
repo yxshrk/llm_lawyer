@@ -13,6 +13,7 @@ from llm_lawyer.api.routes import (
     emails,
     health,
     opposing,
+    qa,
     redactions,
     relevancy,
 )
@@ -47,6 +48,7 @@ def create_app() -> FastAPI:
     app.include_router(redactions.router)
     app.include_router(analyses.router)
     app.include_router(opposing.router)
+    app.include_router(qa.router)
     app.include_router(relevancy.router)
     app.include_router(audit_events.router)
     app.include_router(chat.router)

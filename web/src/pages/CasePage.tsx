@@ -13,6 +13,7 @@ import { EmailModal } from "../components/EmailModal";
 import { GmailConnector } from "../components/GmailConnector";
 import { UploadStepper } from "../components/UploadStepper";
 import { Loader } from "../components/Loader";
+import { QaPanel } from "../components/QaPanel";
 import {
   ActivityConsole,
   useActivityLog,
@@ -20,7 +21,7 @@ import {
 } from "../components/ActivityConsole";
 import type { AuditEvent } from "../lib/api";
 
-type TopTab = "ours" | "opposing" | "context" | "history" | "consolidated";
+type TopTab = "ours" | "opposing" | "context" | "qa" | "history" | "consolidated";
 type PipelineSub = "documents" | "emails";
 type ProductionType = "own" | "opposing";
 
@@ -99,6 +100,7 @@ export default function CasePage() {
     { id: "ours", label: "🛡️ Our Pipeline", count: ownDocs.length + ownEmails.length },
     { id: "opposing", label: "⚔️ Opposing Counsel", count: opposingDocs.length + opposingEmails.length },
     { id: "context", label: "🧠 Case Context", count: memories.length },
+    { id: "qa", label: "⚔️ Q&A Rehearsal" },
     { id: "history", label: "📜 Audit Trail" },
     { id: "consolidated", label: "📑 Consolidated Case" },
   ];
@@ -231,6 +233,13 @@ export default function CasePage() {
         />
       )}
       {topTab === "consolidated" && <ConsolidatedTab caseId={caseId!} />}
+      {topTab === "qa" && (
+        <QaPanel
+          caseId={caseId!}
+          pushEvent={pushEvent}
+          setAnyRunning={setAnyRunning}
+        />
+      )}
       {topTab === "history" && <AuditTab caseId={caseId!} />}
       <ActivityConsole
         title="🧠 AI activity"
