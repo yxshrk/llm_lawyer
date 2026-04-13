@@ -36,6 +36,14 @@ export interface Memory {
   content: string;
 }
 
+export interface EmailPreview {
+  from_addr: string | null;
+  to_addrs: string | null;
+  subject: string | null;
+  body: string | null;
+  timestamp: string | null;
+}
+
 export interface Document {
   id: UUID;
   case_id: UUID | null;
@@ -43,11 +51,13 @@ export interface Document {
   title: string;
   author?: string | null;
   source_type: string;
+  production_type?: "own" | "opposing";
   storage_path: string;
   mime: string | null;
   page_count: number | null;
   chunk_count: number;
   signed_url?: string | null;
+  email?: EmailPreview | null;
   created_at?: string | null;
   last_opened_at?: string | null;
 }
