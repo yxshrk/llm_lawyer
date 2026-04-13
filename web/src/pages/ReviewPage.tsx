@@ -36,7 +36,7 @@ export default function ReviewPage() {
   // Activity console state — shared by every streaming op on this page.
   const { make: makeEvent } = useActivityLog();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [consoleCollapsed, setConsoleCollapsed] = useState(false);
+  const [consoleCollapsed, setConsoleCollapsed] = useState(true);
   const [anyRunning, setAnyRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 

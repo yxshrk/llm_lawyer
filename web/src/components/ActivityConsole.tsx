@@ -35,11 +35,25 @@ export function ActivityConsole({
     });
   }, [events.length]);
 
+  // Auto-hide when idle + no events — user can re-open via the tiny pill.
+  const idle = !running && events.length === 0;
+  if (idle && collapsed) {
+    return (
+      <button
+        onClick={onToggle}
+        className="fixed bottom-4 right-4 z-40 px-3 py-1.5 text-[11px] bg-stone-900 text-stone-100 rounded-full shadow-lg border border-stone-700 hover:bg-stone-800 font-mono"
+        title="Open AI activity console"
+      >
+        🧠 activity
+      </button>
+    );
+  }
+
   return (
     <div
       className={cn(
-        "fixed bottom-4 right-4 w-[420px] bg-stone-900 text-stone-100 rounded-lg shadow-2xl border border-stone-700 text-xs font-mono z-40",
-        collapsed ? "h-10" : "max-h-[50vh]",
+        "fixed bottom-4 right-4 w-[380px] bg-stone-900 text-stone-100 rounded-lg shadow-2xl border border-stone-700 text-xs font-mono z-40",
+        collapsed ? "h-10" : "max-h-[40vh]",
         "flex flex-col overflow-hidden",
       )}
     >

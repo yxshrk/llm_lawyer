@@ -47,7 +47,7 @@ export default function CasePage() {
   const [uploadName, setUploadName] = useState<string | undefined>();
   const { make: makeEvent } = useActivityLog();
   const [events, setEvents] = useState<ActivityEvent[]>([]);
-  const [consoleCollapsed, setConsoleCollapsed] = useState(false);
+  const [consoleCollapsed, setConsoleCollapsed] = useState(true);
   const [anyRunning, setAnyRunning] = useState(false);
   const pushEvent = (partial: Omit<ActivityEvent, "id" | "t">) =>
     setEvents((prev) => [...prev, makeEvent(partial)]);
