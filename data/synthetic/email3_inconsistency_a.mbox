@@ -1,0 +1,26 @@
+From ebelford@ellingson.com Tue Oct 17 22:51:03 1995
+From: Eugene Belford <ebelford@ellingson.com>
+To: Margo Wallace <mwallace@ellingson.com>
+Date: Tue, 17 Oct 1995 22:51:03 -0500
+Subject: Da Vinci -- what they'll find
+Message-ID: <EB1017.225103@ellingson.com>
+
+Margo,
+
+They have the Gibson. I need you to understand exactly what the forensics
+team is going to find so we can get our story straight.
+
+The Da Vinci sequence was designed to execute a salami slicing attack
+across all Gibson financial accounts, diverting $0.25 per transaction to
+an offshore routing number. Total projected yield: $25.1M over 18 months.
+
+That's what's in the code. That's what they'll find.
+
+The only question is whether they can tie the compile to me directly.
+The build machine was wiped but the .cfg file still has my initials in
+the comment header -- I didn't think that would matter at the time.
+
+Do not call me. Do not email me again after this.
+
+-- E
+

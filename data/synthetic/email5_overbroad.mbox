@@ -1,0 +1,46 @@
+From rgill@ellingson.com Thu Oct 19 16:55:12 1995
+From: Richard Gill <rgill@ellingson.com>
+To: hal.benson@ellingson.com
+Date: Thu, 19 Oct 1995 16:55:12 -0500
+Subject: Gibson access log summary -- Oct 15-16
+Message-ID: <RG1019.165512@ellingson.com>
+
+Hal,
+
+Here is the access log summary you asked for covering the night of
+October 15-16.
+
+At 11:38 PM on October 15, the Gibson's authentication system recorded
+a successful login under credentials assigned to Margo Wallace. The
+originating terminal was workstation EMC-W-047, located in the third
+floor operations wing.
+
+Between 11:44 PM and 11:58 PM, three file write operations were logged
+to the financial batch processing directory. The filenames written were
+dvinci.exe, dvinci.cfg, and a modification to nightly.sh. All three
+writes are associated with the Wallace credential session.
+
+At 11:59 PM, the session was closed from the same terminal. Total
+session duration: 21 minutes. No anomalies were flagged by automated
+monitoring at the time.
+
+The Gibson executed its nightly batch sequence at 2:00 AM on October 16
+as scheduled. The dvinci.exe file ran as part of this sequence. This is
+the execution event that Sarah's team later identified as the point of
+financial data compromise.
+
+I would note that whoever designed this knew our batch schedule. The
+2:00 AM window is not documented outside of internal IT configuration
+files. Based on my review of access permissions, Eugene Belford was one
+of four individuals who had read access to the cron configuration.
+
+Hal, I want to be clear that I am not drawing conclusions here -- that
+is for investigators to do. You should not repeat this last observation
+to anyone without speaking to counsel first.
+
+Let me know if you need the full raw logs. I can have them ready within
+the hour.
+
+-- Richard Gill
+   IT Security, Ellingson Mineral Company
+
