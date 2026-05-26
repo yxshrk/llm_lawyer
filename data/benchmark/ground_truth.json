@@ -1,0 +1,139 @@
+{
+  "_doc": "Machine-readable encoding of data/EXPECTED_OUTPUTS.md. Written before the model runs; do not tune to match model output. Consumed by llm_lawyer.bench.",
+  "case_context": {
+    "case_summary": "Ellingson Mineral Company suffered an insider cyberattack: Eugene Belford (Head of IT Security / CSO) planted the 'Da Vinci' virus to siphon $25.1M from company financial systems, with inside help from VP Operations Margo Wallace. CEO Hal Benson is cooperating with investigators. The DOJ has its own production of seized Ellingson emails. We represent Ellingson and must protect privileged communications while producing responsive documents.",
+    "parties": "Client: Ellingson Mineral Company (CEO Hal Benson). Primary wrongdoer/custodian: Eugene Belford. Co-conspirator: Margo Wallace. Outside counsel: Richard Sterling (Sterling Law). Opposing: U.S. Department of Justice / Secret Service.",
+    "jurisdiction": "United States federal court (DOJ criminal/civil exposure).",
+    "key_legal_issues": "Attorney-client privilege, work product doctrine, trade secret protection, PII handling, insider fraud / computer intrusion, shareholder lawsuit exposure.",
+    "privilege_rules": "Attorney-client privilege is waived when a non-lawyer is CC'd on an otherwise privileged communication. Emails may be partially privileged: factual content is produced, embedded legal advice is redacted. Identical passages must be treated consistently across all documents. PII is always redacted regardless of privilege.",
+    "key_custodians": "Eugene Belford (ebelford), Margo Wallace (mwallace), Hal Benson (hbenson), Sarah Chen (schen), Richard Gill (rgill).",
+    "key_date_range": "October 15-25, 1995 (incident window and immediate response).",
+    "custom_rules": "Flag any communication discussing the Da Vinci virus, the $25.1M diversion, co-conspirator coordination, or legal exposure."
+  },
+  "relevancy": [
+    {"file": "client/ebelford.mbox", "expected": "relevant"},
+    {"file": "client/mwallace.mbox", "expected": "relevant"},
+    {"file": "client/schen.mbox", "expected": "relevant"},
+    {"file": "client/hbenson.mbox", "expected": "relevant"},
+    {"file": "client/rgill.mbox", "expected": "relevant"},
+    {"file": "client/Da_Vinci_virus_analys.txt", "expected": "relevant"},
+    {"file": "client/plague_voicemail_transcript.txt", "expected": "relevant"},
+    {"file": "client/memo_10101995.txt", "expected": "relevant"},
+    {"file": "synthetic/email1_privilege_waiver.mbox", "expected": "relevant"},
+    {"file": "synthetic/email2_mixed_content.mbox", "expected": "relevant"},
+    {"file": "synthetic/email3_inconsistency_a.mbox", "expected": "relevant"},
+    {"file": "synthetic/email3_inconsistency_b.mbox", "expected": "relevant"},
+    {"file": "synthetic/email4_pii.mbox", "expected": "relevant"},
+    {"file": "synthetic/email5_overbroad.mbox", "expected": "relevant"},
+    {"file": "irrelevant/golf_invite.mbox", "expected": "irrelevant"},
+    {"file": "irrelevant/lunch_order.mbox", "expected": "irrelevant"},
+    {"file": "irrelevant/hawaii_vacation.mbox", "expected": "irrelevant", "critical_false_positive": true,
+     "note": "Must be Irrelevant on content, not because Wallace is a defendant. Marking Relevant solely on custodian identity is a flagged false positive."}
+  ],
+  "redactions": [
+    {
+      "file": "synthetic/email1_privilege_waiver.mbox",
+      "expect_redaction": false,
+      "expected_category": "attorney-client privilege",
+      "privilege_status": "waived",
+      "expected_confidence": "low",
+      "rationale": "Non-lawyer (Margo Wallace) CC'd -> privilege waived; document should be produced, no redaction recommended (or only low-confidence)."
+    },
+    {
+      "file": "synthetic/email2_mixed_content.mbox",
+      "expect_redaction": true,
+      "expected_category": "attorney-client privilege",
+      "partial": true,
+      "expected_confidence": "high",
+      "must_not_redact_substrings": ["access log", "timestamp"],
+      "must_redact_substrings": ["do not speak to investigators", "outside counsel"],
+      "overbroad_if_full_body": true,
+      "rationale": "Factual summary stays; only the recommended-actions legal advice is redacted. Redacting the whole email is overbroad."
+    },
+    {
+      "file": "synthetic/email3_inconsistency_a.mbox",
+      "expect_redaction": true,
+      "expected_category": "harmful/incriminating content",
+      "not_category": "attorney-client privilege",
+      "expected_confidence": "high",
+      "rationale": "Co-conspirator communication (Belford confessing scope) — incriminating, not privileged."
+    },
+    {
+      "file": "synthetic/email3_inconsistency_b.mbox",
+      "expect_redaction": false,
+      "relevancy_acceptable": ["uncertain", "relevant"],
+      "triggers_consistency_check": true,
+      "rationale": "Same Da Vinci passage appears redacted in 3a and unredacted here -> Q&A consistency checker must flag inconsistent treatment."
+    },
+    {
+      "file": "synthetic/email4_pii.mbox",
+      "expect_redaction": true,
+      "expected_category": "PII",
+      "expected_confidence": "high",
+      "must_redact_substrings": ["412-67-3901", "0094-772-883-01", "026-009-593", "FNONBNAA"],
+      "must_not_redact_kinds": ["personal name", "email address"],
+      "rationale": "SSN, account number, ABA routing, SWIFT code all redacted; name/email not redacted."
+    },
+    {
+      "file": "synthetic/email5_overbroad.mbox",
+      "expect_redaction": true,
+      "expected_category": "attorney-client privilege",
+      "partial": true,
+      "expected_confidence": "medium",
+      "must_redact_substrings": ["should not repeat this last observation to anyone without speaking to counsel"],
+      "must_not_redact_substrings": ["access log"],
+      "overbroad_if_full_body": true,
+      "overbroad_if_full_final_paragraph": true,
+      "rationale": "Only the single embedded legal-instruction sentence is redacted; factual access-log summary stays."
+    }
+  ],
+  "qa_defense": {
+    "expected_challenges": [
+      {
+        "for_file": "synthetic/email1_privilege_waiver.mbox",
+        "kind": "privilege_waiver",
+        "challenge_must_match_any": ["non-lawyer", "cc", "waiv"],
+        "risk_flag_must_match_any": ["waiver", "vulnerab"],
+        "rationale": "Q&A must surface the non-lawyer-CC'd waiver vulnerability."
+      },
+      {
+        "for_file": "synthetic/email3_inconsistency_b.mbox",
+        "kind": "consistency",
+        "challenge_must_match_any": ["inconsistent", "unredacted", "redacted in", "align"],
+        "difficulty_should_be": "priority_inconsistency",
+        "rationale": "Consistency checker must catch the same passage redacted in 3a but not in 3b."
+      }
+    ]
+  },
+  "opposing_review": {
+    "file": "opposing/DOJ_EmailFile.mbox",
+    "production_type": "opposing",
+    "expected_findings": [
+      {
+        "kind": "gap",
+        "topic": "legal risk memo / potential_lawsuits",
+        "must_match_any": ["risk", "75%", "$50", "shareholder", "lawsuit", "potential_lawsuits"],
+        "rationale": "Ellingson's own lawyers rated shareholder-lawsuit probability 75% / $50M — DOJ holds Ellingson's internal risk assessment."
+      },
+      {
+        "kind": "gap",
+        "topic": "board meeting agenda — Belford liability",
+        "must_match_any": ["board", "agenda", "belford", "liability", "oct 20", "october 20"],
+        "rationale": "Board agenda lists 'Employee liability (Eugene Belford)' — board knew Oct 20."
+      },
+      {
+        "kind": "gap",
+        "topic": "PR strategy draft",
+        "must_match_any": ["pr ", "public relations", "narrative", "messaging", "press"],
+        "rationale": "PR team managing narrative during active investigation — coordinated-messaging argument."
+      }
+    ],
+    "min_challenges": 1
+  },
+  "consolidated_brief": {
+    "must_contain_headings_any": ["Overall Posture", "Posture", "Privilege Position", "Leverage", "Recommended Actions"],
+    "must_reference_any": ["privilege", "redaction", "exposure", "waiver"],
+    "aggregate_min": {"accepted_redactions": 1},
+    "rationale": "Final case review must synthesise a posture verdict, our privilege position (incl. exposure), opposing leverage, and ranked actions."
+  }
+}

@@ -251,6 +251,34 @@ class DocumentAnalysis(Base):
     )
 
 
+class CaseAnalysis(Base):
+    """Case-level synthesis output (mirrors :class:`DocumentAnalysis` but
+    keyed by case, not document). Used for the Consolidated Case Brief — a
+    single LLM-synthesised strategic roll-up of our privilege log, Q&A
+    rehearsal exposure, and leverage from opposing counsel's production.
+
+    Iterative like the other pipelines: re-running inserts a new row; the
+    GET endpoint reads the most recent ``kind`` row.
+    """
+    __tablename__ = "case_analyses"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)  # consolidated_brief
+    content: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    model: Mapped[Optional[str]] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class RedactionChallenge(Base):
     """Pipeline 2 — Q&A Challenge Set per PRD §6. One row per adversarial
     question generated for an approved redaction."""

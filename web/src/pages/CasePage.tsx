@@ -5,6 +5,7 @@ import {
   api,
   type Case,
   type CaseDocument,
+  type ConsolidatedAggregate,
   type Email,
   type Memory,
 } from "../lib/api";
@@ -777,26 +778,213 @@ function CaseContextTab({
   );
 }
 
-function ConsolidatedTab({ caseId: _caseId }: { caseId: string }) {
+function ConsolidatedTab({ caseId }: { caseId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [brief, setBrief] = useState<string | null>(null);
+  const [agg, setAgg] = useState<ConsolidatedAggregate | null>(null);
+  const [model, setModel] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const existing = await api.getConsolidated(caseId);
+        if (existing) {
+          setBrief(existing.brief);
+          setAgg(existing.aggregate);
+          setModel(existing.model);
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [caseId]);
+
+  const run = async () => {
+    setRunning(true);
+    setError(null);
+    setStage("starting");
+    try {
+      for await (const ev of api.streamConsolidated(caseId)) {
+        if (ev.type === "stage") setStage(ev.stage);
+        else if (ev.type === "aggregate") setAgg(ev.aggregate);
+        else if (ev.type === "brief") {
+          setBrief(ev.content);
+          setModel(ev.model ?? null);
+        } else if (ev.type === "error") setError(ev.message);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Brief generation failed");
+    } finally {
+      setRunning(false);
+      setStage(null);
+    }
+  };
+
+  const c = agg?.counts;
+
   return (
     <div>
-      <div className="mb-5 p-4 rounded-lg border border-violet-200 bg-violet-50">
-        <div className="font-medium">📑 Consolidated Case Brief</div>
-        <div className="text-xs text-muted mt-1">
-          The finalised package: our defensible redactions with privilege log
-          entries, strengths/weaknesses on our own documents, challenges against
-          opposing counsel's redactions, and gap analysis of their production.
+      <div className="mb-5 p-4 rounded-lg border border-violet-200 bg-violet-50 flex items-start justify-between gap-4">
+        <div>
+          <div className="font-medium">📑 Consolidated Case Brief</div>
+          <div className="text-xs text-muted mt-1 max-w-2xl">
+            The finalised package: our accepted redactions as a privilege log
+            with Q&amp;A rehearsal status, strengths/weaknesses on our own
+            documents, and challenges plus gap analysis against opposing
+            counsel's production — synthesised into a strategic brief.
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <a
+            href={api.consolidatedPdfUrl(caseId)}
+            className={cn(
+              "px-3 py-1.5 text-xs border border-line rounded-md bg-white",
+              brief ? "hover:bg-stone-50" : "pointer-events-none opacity-40",
+            )}
+          >
+            ⇣ Export PDF
+          </a>
+          <button
+            onClick={run}
+            disabled={running}
+            className="px-4 py-1.5 text-xs bg-ink text-white rounded-md disabled:opacity-50"
+          >
+            {running ? "Synthesising…" : brief ? "Regenerate" : "Generate brief"}
+          </button>
         </div>
       </div>
-      <div className="p-10 text-center border border-dashed border-line rounded-lg text-muted">
-        <div className="text-3xl mb-2">🚧</div>
-        <div className="text-sm">Coming in the next build.</div>
-        <div className="text-xs mt-2 max-w-md mx-auto">
-          Will roll up: our accepted redactions (privilege log), Q&amp;A rehearsal
-          status per redaction, opposing counsel redaction challenges, and
-          argument gap analysis — exportable as a single PDF.
+
+      {running && (
+        <div className="mb-4 text-xs text-muted">
+          {stage === "aggregating"
+            ? "Rolling up redactions, Q&A status, and opposing review…"
+            : stage === "synthesising"
+            ? "Synthesising strategic brief (this can take ~20s)…"
+            : "Starting…"}
         </div>
-      </div>
+      )}
+
+      {error && (
+        <div className="mb-4 p-3 text-xs rounded-md border border-rose-200 bg-rose-50 text-rose-700">
+          {error}
+        </div>
+      )}
+
+      {c && (
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
+          {[
+            { k: "Own docs", v: c.own_documents },
+            { k: "Accepted redactions", v: c.accepted_redactions },
+            { k: "Unprepared (Q&A)", v: c.redactions_unprepared, warn: c.redactions_unprepared > 0 },
+            { k: "Opposing docs", v: c.opposing_documents },
+            { k: "Challenges", v: c.opposing_challenges },
+            { k: "Gaps", v: c.opposing_gaps },
+          ].map((s) => (
+            <div
+              key={s.k}
+              className={cn(
+                "rounded-lg border p-3 text-center",
+                s.warn ? "border-amber-300 bg-amber-50" : "border-line bg-white",
+              )}
+            >
+              <div className="text-xl font-semibold">{s.v}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted">
+                {s.k}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <Loader label="Loading brief…" />
+      ) : !brief && !running ? (
+        <div className="p-10 text-center border border-dashed border-line rounded-lg text-muted">
+          <div className="text-3xl mb-2">📑</div>
+          <div className="text-sm">No brief generated yet.</div>
+          <div className="text-xs mt-2 max-w-md mx-auto">
+            Accept redactions, rehearse them in Q&amp;A, and review opposing
+            counsel's production — then generate the consolidated brief.
+          </div>
+        </div>
+      ) : (
+        <>
+          {brief && (
+            <div
+              data-color-mode="light"
+              className="bg-white border border-line rounded-lg p-6"
+            >
+              <MDEditor.Markdown source={brief} />
+              {model && (
+                <div className="text-[10px] text-muted mt-4 pt-3 border-t border-line">
+                  Synthesised by {model}
+                </div>
+              )}
+            </div>
+          )}
+
+          {agg && agg.privilege_log.length > 0 && (
+            <div className="mt-6">
+              <div className="text-sm font-semibold mb-2">
+                Privilege Log ({agg.privilege_log.length})
+              </div>
+              <div className="bg-white border border-line rounded-lg overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-stone-50 text-left uppercase tracking-wide text-muted">
+                    <tr>
+                      <th className="px-3 py-2 w-8">#</th>
+                      <th className="px-3 py-2">Document</th>
+                      <th className="px-3 py-2">Span</th>
+                      <th className="px-3 py-2">Basis</th>
+                      <th className="px-3 py-2">Conf.</th>
+                      <th className="px-3 py-2">Q&amp;A status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {agg.privilege_log.map((p, i) => {
+                      const weak =
+                        p.qa_status == null ||
+                        ["pending", "needs_work", "will_revise"].includes(
+                          p.qa_status,
+                        );
+                      return (
+                        <tr key={i} className="align-top">
+                          <td className="px-3 py-2 text-muted">{i + 1}</td>
+                          <td className="px-3 py-2">{p.document}</td>
+                          <td className="px-3 py-2 text-muted max-w-xs truncate">
+                            {p.span}
+                          </td>
+                          <td className="px-3 py-2">{p.basis}</td>
+                          <td className="px-3 py-2 text-muted">
+                            {p.confidence != null
+                              ? p.confidence.toFixed(2)
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-semibold",
+                                weak
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-emerald-100 text-emerald-800",
+                              )}
+                            >
+                              {p.qa_status ?? "not rehearsed"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

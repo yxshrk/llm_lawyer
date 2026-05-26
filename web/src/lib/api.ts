@@ -233,8 +233,46 @@ export interface WebResult {
   snippet: string;
 }
 
+export interface ConsolidatedAggregate {
+  counts: {
+    own_documents: number;
+    opposing_documents: number;
+    accepted_redactions: number;
+    redactions_unprepared: number;
+    opposing_challenges: number;
+    opposing_gaps: number;
+    qa_run: string | null;
+  };
+  privilege_log: Array<{
+    document: string;
+    span: string;
+    basis: string;
+    confidence: number | null;
+    status: string;
+    qa_status: string | null;
+    qa_question: string | null;
+    qa_risk_flag: string | null;
+  }>;
+  strengths_weaknesses: Array<{ document: string; content: any }>;
+  opposing_leverage: Array<{
+    document: string;
+    challenges: OpposingChallenge[];
+    gaps: OpposingGap[];
+  }>;
+}
+
+export interface ConsolidatedBrief {
+  case_id: UUID;
+  brief: string;
+  aggregate: ConsolidatedAggregate;
+  model: string | null;
+  created_at: string | null;
+}
+
 export type StreamEvent =
-  | { type: "started"; total_batches?: number; chunk_count?: number; doc_title?: string; stage_plan?: string[]; case_id?: string; query_preview?: string }
+  | { type: "started"; total_batches?: number; chunk_count?: number; doc_title?: string; stage_plan?: string[]; case_id?: string; case_name?: string; query_preview?: string }
+  | { type: "aggregate"; aggregate: ConsolidatedAggregate }
+  | { type: "brief"; content: string; model?: string; provider?: string }
   | { type: "stage"; stage: string; doc_count?: number }
   | { type: "batch_start"; batch: number; total_batches: number }
   | { type: "batch_done"; batch: number; created: number; provider?: string; model?: string; error?: string }
@@ -389,6 +427,17 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ lawyer_status, lawyer_notes }),
     }),
+
+  // Consolidated Case Brief
+  streamConsolidated: (caseId: UUID, signal?: AbortSignal) =>
+    ndjsonStream(`${BASE_URL}/cases/${caseId}/consolidated/stream`, {
+      method: "POST",
+      signal,
+    }),
+  getConsolidated: (caseId: UUID) =>
+    request<ConsolidatedBrief | null>(`/cases/${caseId}/consolidated`),
+  consolidatedPdfUrl: (caseId: UUID) =>
+    `${BASE_URL}/cases/${caseId}/consolidated.pdf`,
 
   // Chat
   chat: (message: string, opts: { conversation_id?: UUID; document_id?: UUID } = {}) =>
